@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { Zap, RotateCcw, Check, X, Bookmark, Volume2, Info } from "lucide-react";
 import { api } from "../services/api";
 import { cn } from "../lib/utils";
+import { speak } from "../lib/speech";
 
 type Card = {
   word: string;
@@ -12,19 +13,51 @@ type Card = {
   category: string;
 };
 
-const DEFAULT_CARDS: Card[] = [
+const WORD_POOL: Card[] = [
   { word: "Breakfast", definition: "First meal of the day", ml: "പ്രഭാതഭക്ഷണം", example: "I had eggs for breakfast.", category: "Food" },
   { word: "Delicious", definition: "Tasting very good", ml: "രുചികരമായ", example: "This biryani is delicious!", category: "Food" },
   { word: "Transparent", definition: "Allowing light to pass through", ml: "സുതാര്യമായ", example: "The glass is transparent.", category: "General" },
   { word: "Exhausted", definition: "Very tired", ml: "വളരെ ക്ഷീണിച്ചു", example: "I am exhausted after the long trip.", category: "Emotions" },
-  { word: "Bargain", definition: "A cheap price for something", ml: "ലാഭകരമായ ഇടപാട് / വിലപേശൽ", example: "This shirt was a real bargain.", category: "Shopping" }
+  { word: "Bargain", definition: "A cheap price for something", ml: "ലാഭകരമായ ഇടപാട് / വിലപേശൽ", example: "This shirt was a real bargain.", category: "Shopping" },
+  { word: "Adventure", definition: "An unusual and exciting experience", ml: "സാഹസികത", example: "The hike was a great adventure.", category: "Leisure" },
+  { word: "Grateful", definition: "Feeling or showing an appreciation for something", ml: "കൃതജ്ഞതയുള്ള", example: "I am grateful for your help.", category: "Emotions" },
+  { word: "Courage", definition: "The ability to do something that frightens one", ml: "ധൈര്യം", example: "She had the courage to speak up.", category: "Virtues" },
+  { word: "Harmony", definition: "Consistent, orderly, or pleasing arrangement of parts", ml: "ഐക്യം / യോജിപ്പ്", example: "They live in perfect harmony.", category: "General" },
+  { word: "Curiosity", definition: "A strong desire to know or learn something", ml: "അന്വേഷണതൽപരത / കൗതുകം", example: "His curiosity led him to explore the attic.", category: "Traits" },
+  { word: "Optimistic", definition: "Hopeful and confident about the future", ml: "ശുഭാപ്തിവിശ്വാസമുള്ള", example: "He is optimistic about the new job.", category: "Emotions" },
+  { word: "Punctual", definition: "Happening or doing something at the agreed time", ml: "കൃത്യനിഷ്ഠയുള്ള", example: "Please try to be punctual.", category: "Professional" },
+  { word: "Humble", definition: "Having or showing a modest or low estimate of one's importance", ml: "വിനയമുള്ള", example: "He is a very humble person.", category: "Virtues" },
+  { word: "Resilient", definition: "Able to withstand or recover quickly from difficult conditions", ml: "തിരിച്ചുവരാൻ ശേഷിയുള്ള", example: "Children are often very resilient.", category: "Traits" },
+  { word: "Magnificent", definition: "Extremely beautiful, elaborate, or impressive", ml: "മനോഹരമായ / ഗംഭീരമായ", example: "The view from the palace was magnificent.", category: "Adjectives" }
 ];
 
 export default function Flashcards({ userData }: { userData: any }) {
-  const [cards, setCards] = useState<Card[]>(DEFAULT_CARDS);
+  const [cards, setCards] = useState<Card[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [direction, setDirection] = useState(0);
+
+  useEffect(() => {
+    // Select 5 words based on the date
+    const today = new Date();
+    const dateString = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+    
+    // Seeded random-ish selection
+    let hash = 0;
+    for (let i = 0; i < dateString.length; i++) {
+      hash = ((hash << 5) - hash) + dateString.charCodeAt(i);
+      hash |= 0;
+    }
+    
+    const startIndex = Math.abs(hash) % WORD_POOL.length;
+    const selectedCards = [];
+    for (let i = 0; i < 5; i++) {
+       selectedCards.push(WORD_POOL[(startIndex + i) % WORD_POOL.length]);
+    }
+    setCards(selectedCards);
+  }, []);
+
+  if (cards.length === 0) return null;
 
   const currentCard = cards[currentIndex];
 
@@ -86,10 +119,16 @@ export default function Flashcards({ userData }: { userData: any }) {
                     <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{currentCard.category}</span>
                     <h2 className="text-5xl font-display font-bold tracking-tighter text-stone-900">{currentCard.word}</h2>
                   </div>
-                  <div className="flex items-center gap-2 px-4 py-2 bg-stone-100 rounded-xl text-stone-400">
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      speak(currentCard.word);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-stone-100 rounded-xl text-stone-400 hover:bg-stone-200 hover:text-stone-900 transition-colors z-10"
+                  >
                      <Volume2 className="w-4 h-4" />
                      <span className="text-xs font-mono font-bold uppercase tracking-widest">Listen</span>
-                  </div>
+                  </button>
                   <p className="text-stone-300 text-[10px] font-bold uppercase tracking-[0.3em] absolute bottom-12">Click to reveal meaning</p>
               </div>
 

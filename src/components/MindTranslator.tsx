@@ -1,12 +1,40 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Send, Languages, Sparkles, Volume2, Info, ArrowRight } from "lucide-react";
-import { speak } from "../lib/speech";
+import { Send, Languages, Sparkles, Volume2, Info, ArrowRight, Mic } from "lucide-react";
+import { speak, createSpeechRecognition } from "../lib/speech";
 import { GoogleGenAI } from "@google/genai";
 import { cn } from "../lib/utils";
 
 export default function MindTranslator() {
   const [input, setInput] = useState("");
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    recognitionRef.current = createSpeechRecognition();
+    if (recognitionRef.current) {
+      recognitionRef.current.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setInput(transcript);
+        setIsListening(false);
+      };
+      recognitionRef.current.onerror = () => setIsListening(false);
+      recognitionRef.current.onend = () => setIsListening(false);
+      // For Malayalam recognition if supported
+      recognitionRef.current.lang = 'ml-IN';
+    }
+  }, []);
+
+  const handleMic = () => {
+    if (!recognitionRef.current) return;
+    if (isListening) {
+      recognitionRef.current.stop();
+    } else {
+      setIsListening(true);
+      recognitionRef.current.start();
+    }
+  };
+
   const [result, setResult] = useState<{
     english: string;
     explanation: string;
@@ -80,14 +108,24 @@ export default function MindTranslator() {
         <div className="absolute top-4 left-8 text-[10px] font-bold text-stone-400 uppercase tracking-widest pointer-events-none">
           Malayalam Thought
         </div>
-        <button
-          onClick={translateMalayalam}
-          disabled={isLoading || !input.trim()}
-          className={cn(
-            "absolute bottom-6 right-6 p-4 rounded-2xl transition-all flex items-center gap-3",
-            isLoading ? "bg-stone-100 text-stone-400" : "bg-stone-900 text-white hover:scale-105 active:scale-95 shadow-xl shadow-stone-400/20"
-          )}
-        >
+        <div className="absolute top-6 right-6 flex gap-2">
+          <button
+            onClick={handleMic}
+            className={cn(
+              "p-4 rounded-2xl transition-all shadow-lg",
+              isListening ? "bg-red-500 text-white animate-pulse" : "bg-white border border-stone-200 text-stone-400 hover:text-stone-900"
+            )}
+          >
+            <Mic className="w-5 h-5" />
+          </button>
+          <button
+            onClick={translateMalayalam}
+            disabled={isLoading || !input.trim()}
+            className={cn(
+              "p-4 rounded-2xl transition-all flex items-center gap-3",
+              isLoading ? "bg-stone-100 text-stone-400" : "bg-stone-900 text-white hover:scale-105 active:scale-95 shadow-xl shadow-stone-400/20"
+            )}
+          >
           {isLoading ? (
             <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}>
               <Sparkles className="w-6 h-6" />
@@ -100,8 +138,9 @@ export default function MindTranslator() {
           )}
         </button>
       </div>
+    </div>
 
-      <AnimatePresence>
+    <AnimatePresence>
         {result && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -120,13 +159,15 @@ export default function MindTranslator() {
                     <h2 className="text-5xl font-display font-medium tracking-tight italic text-stone-900 leading-tight">
                       "{result.english}"
                     </h2>
-                    <div 
+                    <button 
                       onClick={() => speak(result.english)}
-                      className="flex items-center gap-3 text-stone-400 cursor-pointer hover:text-stone-900 transition-colors"
+                      className="flex items-center gap-3 text-stone-400 hover:text-stone-900 transition-colors bg-transparent border-none cursor-pointer group/speaker focus:outline-none"
                     >
-                       <Volume2 className="w-5 h-5" />
+                       <div className="p-2 rounded-lg group-hover/speaker:bg-stone-100 transition-colors">
+                          <Volume2 className="w-5 h-5" />
+                       </div>
                        <span className="text-sm font-mono tracking-widest uppercase">{result.pronunciation}</span>
-                    </div>
+                    </button>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-12 pt-8 border-t border-stone-100">

@@ -42,20 +42,17 @@ export const api = {
 
 export const chatWithNabu = async (history: { role: 'user' | 'model', parts: { text: string }[] }[]) => {
   const ai = getAI();
-  // We remove the last message from history as it will be sent via sendMessage
-  const chatHistory = history.slice(0, -1);
-  const lastMessage = history[history.length - 1];
+  
+  const systemInstruction = "You are Nabu, a friendly robot owl language tutor. Your goal is to help users learn English. Be encouraging, patient, and use simple language. Correct their mistakes gently. You can also explain things in their native language (like Malayalam, Arabic, or Urdu) if they ask, but try to keep them immersion-focused in English as much as possible. Make learning fun with emojis and positive reinforcement.";
 
-  const chat = ai.chats.create({
+  const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
-    history: chatHistory,
+    contents: history,
     config: {
-      systemInstruction: "You are Nabu, a friendly robot owl language tutor. Your goal is to help users learn English. Be encouraging, patient, and use simple language. Correct their mistakes gently. You can also explain things in their native language (like Malayalam, Arabic, or Urdu) if they ask, but try to keep them immersion-focused in English as much as possible. Make learning fun with emojis and positive reinforcement.",
+      systemInstruction: systemInstruction,
+      temperature: 0.7,
+      topP: 0.95,
     }
-  });
-
-  const response = await chat.sendMessage({
-    message: lastMessage.parts[0].text
   });
   
   return response.text;

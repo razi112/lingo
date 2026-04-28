@@ -1,5 +1,5 @@
 {
-  "name": "Lingo English",
+  "name": "Lingo",
   "description": "Comprehensive English learning platform for Malayalam speakers. Practice daily conversations, master grammar with Malayalam support, and build real-world fluency.",
   "requestFramePermissions": [
     "microphone"

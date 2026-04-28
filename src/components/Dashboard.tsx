@@ -31,13 +31,21 @@ export default function Dashboard({ userData, setView }: DashboardProps) {
            <div className="absolute inset-0 bg-stone-900/5 rounded-[3rem] -rotate-3 scale-105 group-hover:rotate-0 transition-transform duration-500" />
            <div className="relative bg-white border border-stone-200 p-8 rounded-[3rem] shadow-2xl shadow-stone-200 overflow-hidden">
               <div className="flex items-center justify-between mb-8">
-                 <h3 className="font-display font-bold text-2xl italic tracking-tight">Active Streak</h3>
+                 <h3 
+                  className="font-display font-bold text-2xl italic tracking-tight border-b-2"
+                  style={{ borderColor: '#cb6f35' }}
+                >
+                  Active Streak
+                </h3>
                  <Zap className="w-8 h-8 text-amber-500 fill-amber-500" />
               </div>
               <div className="flex items-end gap-1 mb-8">
                 {Array.from({ length: 7 }).map((_, i) => (
                   <div key={i} className="flex-1 space-y-2">
-                    <div className="h-16 bg-stone-50 rounded-lg overflow-hidden relative">
+                    <div 
+                      className="h-16 bg-stone-50 rounded-lg overflow-hidden relative border"
+                      style={i === 0 ? { borderColor: '#ff6300' } : {}}
+                    >
                        <motion.div 
                         initial={{ height: 0 }}
                         animate={{ height: `${[40, 70, 90, 60, 80, 100, 20][i]}%` }}

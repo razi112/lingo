@@ -106,18 +106,15 @@ export default function Lessons({ userData }: { userData: any }) {
 
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredLessons.map((lesson, idx) => (
-          <motion.div
+          <button
             key={lesson.id}
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: idx * 0.05 }}
             onClick={() => startLesson(lesson)}
+            disabled={lesson.locked}
             className={cn(
-              "group relative overflow-hidden p-8 rounded-[2.5rem] border transition-all cursor-pointer flex flex-col gap-6",
+              "group relative overflow-hidden p-8 rounded-[2.5rem] border transition-all flex flex-col gap-6 text-left",
               lesson.locked 
                 ? "bg-stone-50 border-stone-100 opacity-60 cursor-not-allowed" 
-                : "bg-white border-stone-200 hover:border-stone-900 shadow-sm hover:shadow-2xl hover:shadow-stone-200 hover:-translate-y-1"
+                : "bg-white border-stone-200 hover:border-stone-900 shadow-sm hover:shadow-2xl hover:shadow-stone-200 hover:-translate-y-1 cursor-pointer"
             )}
           >
             <div className={cn(
@@ -152,7 +149,7 @@ export default function Lessons({ userData }: { userData: any }) {
             <span className="absolute -right-4 -bottom-8 text-[120px] font-display font-bold text-stone-100/50 group-hover:text-stone-900/5 transition-colors pointer-events-none">
               {idx + 1}
             </span>
-          </motion.div>
+          </button>
         ))}
       </section>
 
@@ -927,12 +924,16 @@ function LessonInterface({ lesson, onClose }: { lesson: LessonItem, onClose: () 
                 {currentContent[step].examples.map((ex: any, i: number) => (
                   <div key={i} className="p-8 md:p-10 rounded-[2.5rem] bg-white border border-stone-200 text-left space-y-4 shadow-xl shadow-stone-200/30">
                     <div className="flex items-start gap-4">
-                      <div 
-                        onClick={() => speak(ex.en)}
-                        className="w-10 h-10 rounded-xl bg-stone-900 flex items-center justify-center text-white shadow-lg shrink-0 mt-1 cursor-pointer hover:scale-105 active:scale-95 transition-all"
+                      <button 
+                        onClick={() => {
+                          const textToSpeak = ex.en.includes('/') ? ex.en.split('/')[0].trim() : ex.en;
+                          speak(textToSpeak);
+                        }}
+                        className="w-10 h-10 rounded-xl bg-stone-900 flex items-center justify-center text-white shadow-lg shrink-0 mt-1 cursor-pointer hover:scale-110 active:scale-95 transition-all focus:outline-none focus:ring-2 focus:ring-stone-200"
+                        title="Speak in English"
                       >
                         <Volume2 className="w-5 h-5" />
-                      </div>
+                      </button>
                       <div className="space-y-3">
                         <div>
                           <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1">Example {i + 1}</p>
@@ -966,12 +967,12 @@ function LessonInterface({ lesson, onClose }: { lesson: LessonItem, onClose: () 
                   </p>
                   <div className="p-8 rounded-3xl bg-white border border-stone-200 text-left space-y-4 shadow-xl shadow-stone-200/50">
                      <div className="flex items-center gap-3">
-                       <div 
-                        onClick={() => speak("I am going to start my new job next Monday.")}
-                        className="w-8 h-8 rounded-full bg-stone-900 flex items-center justify-center text-white cursor-pointer hover:scale-110 transition-transform"
+                       <button 
+                         onClick={() => speak("I am going to start my new job next Monday.")}
+                         className="w-8 h-8 rounded-full bg-stone-900 flex items-center justify-center text-white cursor-pointer hover:scale-110 transition-transform"
                        >
                           <Volume2 className="w-4 h-4" />
-                       </div>
+                       </button>
                        <p className="text-lg font-medium">"I am <span className="text-stone-400">going to</span> start my new job next Monday."</p>
                      </div>
                      <p className="text-sm text-stone-400 pl-11">(Decision made before the moment of speaking)</p>

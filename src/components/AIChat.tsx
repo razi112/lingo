@@ -17,23 +17,47 @@ export default function AIChat({ userData }: { userData: any }) {
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  
+  const [playingId, setPlayingId] = useState<number | null>(null);
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (!recognitionRef.current) {
+      recognitionRef.current = createSpeechRecognition();
+    }
+    
+    if (recognitionRef.current) {
+      recognitionRef.current.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setInput(transcript);
+        setIsListening(false);
+      };
+      recognitionRef.current.onerror = () => setIsListening(false);
+      recognitionRef.current.onend = () => setIsListening(false);
+    }
+  }, []);
 
   const SCENARIOS = [
-    { id: 'coffee', icon: '☕', label: 'Ordering Coffee', prompt: "I am a barista at a busy London cafe. Let's practice ordering your coffee and maybe a pastry!" },
-    { id: 'travel', icon: '✈️', label: 'Asking for Directions', prompt: "You are in NYC and need to find Central Park. Ask me for directions and practice polite inquiries." },
-    { id: 'job', icon: '💼', label: 'Job Interview', prompt: "I am the hiring manager for a tech company. Let's practice common interview questions and your self-introduction." },
-    { id: 'free', icon: '🦉', label: 'Free Conversation', prompt: "Let's talk about anything! Tell me about your day or a book you're reading." }
+    { id: 'coffee', icon: '☕', color: 'bg-orange-50', label: 'Ordering Coffee', prompt: "I am a barista at a busy London cafe. Let's practice ordering your coffee and maybe a pastry!" },
+    { id: 'travel', icon: '✈️', color: 'bg-blue-50', label: 'Asking for Directions', prompt: "You are in NYC and need to find Central Park. Ask me for directions and practice polite inquiries." },
+    { id: 'job', icon: '💼', color: 'bg-rose-50', label: 'Job Interview', prompt: "I am the hiring manager for a tech company. Let's practice common interview questions and your self-introduction." },
+    { id: 'free', icon: '🦉', color: 'bg-amber-50', label: 'Free Conversation', prompt: "Let's talk about anything! Tell me about your day or a book you're reading." }
   ];
 
   const startScenario = (s: typeof SCENARIOS[0]) => {
-     setScenario(s.label);
-     setMessages([
-       {
-         role: 'model',
-         parts: [{ text: `Great choice! ${s.prompt} How would you like to start?` }],
-         timestamp: new Date()
-       }
-     ]);
+     try {
+       setScenario(s.label);
+       setMessages([
+         {
+           role: 'model',
+           parts: [{ text: `Great choice! ${s.prompt} How would you like to start?` }],
+           timestamp: new Date()
+         }
+       ]);
+     } catch (err) {
+       console.error("Failed to start scenario:", err);
+     }
   };
 
   useEffect(() => {
@@ -55,24 +79,24 @@ export default function AIChat({ userData }: { userData: any }) {
            </p>
         </header>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pb-32">
            {SCENARIOS.map((s) => (
-             <div 
+             <button 
               key={s.id}
               onClick={() => startScenario(s)}
-              className="group p-10 bg-white border border-stone-200 rounded-[3rem] space-y-6 cursor-pointer transition-all hover:bg-stone-900 hover:text-white hover:shadow-2xl hover:shadow-stone-200 hover:-translate-y-1"
+              className="group text-left p-10 bg-white border border-stone-200 rounded-[3.5rem] space-y-8 cursor-pointer transition-all hover:border-stone-900 hover:shadow-2xl hover:shadow-stone-200 hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-stone-900"
              >
-                <div className="w-16 h-16 bg-stone-50 rounded-2xl flex items-center justify-center text-3xl group-hover:bg-stone-800 transition-colors">
+                <div className={cn("w-20 h-20 rounded-[2rem] flex items-center justify-center text-4xl shadow-sm group-hover:scale-110 transition-transform duration-500", s.color)}>
                    {s.icon}
                 </div>
-                <div className="space-y-2">
-                   <h3 className="text-3xl font-display font-bold italic tracking-tight">{s.label}</h3>
-                   <p className="text-stone-500 group-hover:text-stone-400 text-sm leading-relaxed">{s.prompt}</p>
+                <div className="space-y-3">
+                   <h3 className="text-4xl font-display font-bold italic tracking-tight text-stone-900">{s.label}</h3>
+                   <p className="text-stone-500 text-lg leading-relaxed font-light">{s.prompt}</p>
                 </div>
-                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest pt-4 opacity-0 group-hover:opacity-100 transition-all translate-x-1 duration-300">
-                   Start Practice 🚀
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest pt-4 opacity-40 group-hover:opacity-100 transition-all">
+                   Start Session <Sparkles className="w-4 h-4" />
                 </div>
-             </div>
+             </button>
            ))}
         </div>
       </div>
@@ -93,7 +117,10 @@ export default function AIChat({ userData }: { userData: any }) {
     setIsTyping(true);
 
     try {
-      const history = [...messages, userMessage];
+      const history = [...messages, userMessage].map(m => ({
+        role: m.role,
+        parts: m.parts
+      }));
       const responseText = await chatWithNabu(history);
       
       const nabuMessage: Message = {
@@ -109,23 +136,6 @@ export default function AIChat({ userData }: { userData: any }) {
       setIsTyping(false);
     }
   };
-
-  const [playingId, setPlayingId] = useState<number | null>(null);
-  const [isListening, setIsListening] = useState(false);
-  const recognitionRef = useRef<any>(null);
-
-  useEffect(() => {
-    recognitionRef.current = createSpeechRecognition();
-    if (recognitionRef.current) {
-      recognitionRef.current.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        setInput(transcript);
-        setIsListening(false);
-      };
-      recognitionRef.current.onerror = () => setIsListening(false);
-      recognitionRef.current.onend = () => setIsListening(false);
-    }
-  }, []);
 
   const handleMic = () => {
     if (!recognitionRef.current) return;

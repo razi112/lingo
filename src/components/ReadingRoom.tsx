@@ -129,9 +129,9 @@ interface StoryCardProps {
 
 function StoryCard({ story, onSelect }: StoryCardProps) {
   return (
-    <div 
+    <button 
       onClick={onSelect}
-      className="group relative bg-white border border-stone-200 p-10 rounded-[3rem] space-y-8 cursor-pointer transition-all hover:bg-stone-900 hover:text-white hover:shadow-2xl hover:shadow-stone-300 hover:-translate-y-2"
+      className="group relative text-left bg-white border border-stone-200 p-10 rounded-[3rem] space-y-8 cursor-pointer transition-all hover:bg-stone-900 hover:text-white hover:shadow-2xl hover:shadow-stone-300 hover:-translate-y-2 focus:outline-none focus:ring-2 focus:ring-stone-900"
     >
       <div className="flex items-center justify-between">
          <div className={cn(
@@ -161,6 +161,6 @@ function StoryCard({ story, onSelect }: StoryCardProps) {
       <div className="absolute bottom-6 right-8 text-stone-100 group-hover:text-white/5 pointer-events-none transition-colors">
          <Hash className="w-20 h-20 rotate-12" />
       </div>
-    </div>
+    </button>
   );
 }
