@@ -267,21 +267,20 @@ export default function Login({ onAuth }: LoginProps) {
   };
 
   // ── Guest ──────────────────────────────────────────────────────────
-  const handleGuest = async () => {
-    setLoading(true); setError(null);
-    try {
-      const { data, error } = await supabase.auth.signInAnonymously();
-      if (error) throw error;
-      const profile = await api.upsertProfile({
-        id: data.user!.id, name: "Guest Learner",
-        username: `guest_${data.user!.id.slice(0, 8)}`,
-        email: "", avatar: "",
-      });
-      onAuth(profile as AuthUser);
-    } catch (err: any) {
-      setError(err?.message ?? "Could not start guest session.");
-      setLoading(false);
-    }
+  // Fully local — no Supabase anonymous auth needed (avoids the
+  // "Anonymous sign-ins are disabled" error).
+  const handleGuest = () => {
+    const guestId = `guest_${Math.random().toString(36).slice(2, 10)}`;
+    onAuth({
+      id:       guestId,
+      name:     "Guest Learner",
+      username: guestId,
+      email:    "",
+      avatar:   "",
+      xp:       0,
+      level:    1,
+      streak:   0,
+    });
   };
 
   // ── Render ─────────────────────────────────────────────────────────
