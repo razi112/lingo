@@ -11,5 +11,121 @@
   body {
     @apply antialiased;
   }
+
+  /* ── Light mode tokens ─────────────────────────────────────── */
+  :root {
+    --bg-base:        255 253 250;   /* stone-50  */
+    --bg-surface:     255 255 255;   /* white     */
+    --bg-raised:      245 244 241;   /* stone-100 */
+    --border:         231 229 228;   /* stone-200 */
+    --border-strong:  168 162 158;   /* stone-400 */
+    --text-primary:   28  25  23;    /* stone-900 */
+    --text-secondary: 120 113 108;   /* stone-500 */
+    --text-muted:     168 162 158;   /* stone-400 */
+    --accent:         28  25  23;    /* stone-900 */
+    --accent-fg:      255 255 255;
+    --shadow-color:   214 211 209;   /* stone-300 */
+  }
+
+  /* ── Dark mode tokens ──────────────────────────────────────── */
+  .dark {
+    --bg-base:        15  14  13;    /* near-black */
+    --bg-surface:     24  23  22;    /* stone-950  */
+    --bg-raised:      38  37  36;    /* stone-900  */
+    --border:         63  60  58;    /* stone-700  */
+    --border-strong:  120 113 108;   /* stone-500  */
+    --text-primary:   250 250 249;   /* stone-50   */
+    --text-secondary: 168 162 158;   /* stone-400  */
+    --text-muted:     120 113 108;   /* stone-500  */
+    --accent:         250 250 249;   /* stone-50   */
+    --accent-fg:      28  25  23;    /* stone-900  */
+    --shadow-color:   0   0   0;
+  }
+
+  /* Apply tokens to the root elements */
+  html, body, #root {
+    background-color: rgb(var(--bg-base));
+    color: rgb(var(--text-primary));
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
 }
+
+/* ── Dark mode overrides for Tailwind utility classes ──────────── */
+
+/* Surfaces */
+.dark .bg-white          { background-color: rgb(var(--bg-surface)) !important; }
+.dark .bg-stone-50       { background-color: rgb(var(--bg-base))    !important; }
+.dark .bg-stone-100      { background-color: rgb(var(--bg-raised))  !important; }
+.dark .bg-stone-900      { background-color: rgb(var(--accent))     !important; }
+
+/* Borders */
+.dark .border-stone-100  { border-color: rgb(var(--border))        !important; }
+.dark .border-stone-200  { border-color: rgb(var(--border))        !important; }
+.dark .border-stone-300  { border-color: rgb(var(--border-strong)) !important; }
+
+/* Text */
+.dark .text-stone-900    { color: rgb(var(--text-primary))   !important; }
+.dark .text-stone-800    { color: rgb(var(--text-primary))   !important; }
+.dark .text-stone-600    { color: rgb(var(--text-secondary)) !important; }
+.dark .text-stone-500    { color: rgb(var(--text-secondary)) !important; }
+.dark .text-stone-400    { color: rgb(var(--text-muted))     !important; }
+
+/* Inverted elements (dark bg + white text) stay readable in dark mode */
+.dark .bg-stone-900.text-white { background-color: rgb(var(--bg-raised)) !important; }
+
+/* ── Hover states — more visible in dark mode ──────────────────
+   Light mode hover is stone-100 (a pale warm grey).
+   In dark mode that maps to --bg-raised which is only 14 units
+   brighter than the surface — nearly invisible.
+   We use a dedicated --hover token that's noticeably lighter,
+   with a warm amber undertone so it reads as intentional.        */
+.dark {
+  --hover-bg:      52  49  46;   /* warm dark grey — clearly above surface */
+  --hover-text:    250 250 249;  /* stone-50 — full brightness on hover     */
+  --active-bg:     250 250 249;  /* stone-50 — inverted pill for active nav */
+  --active-text:   28  25  23;   /* stone-900                               */
+}
+
+.dark .hover\:bg-stone-100:hover,
+.dark .hover\:bg-stone-50:hover {
+  background-color: rgb(var(--hover-bg)) !important;
+  transition: background-color 0.15s ease, color 0.15s ease !important;
+}
+
+.dark .hover\:text-stone-900:hover {
+  color: rgb(var(--hover-text)) !important;
+  transition: color 0.15s ease !important;
+}
+
+/* Nav active pill — keep it readable as a light chip on dark bg */
+.dark .bg-stone-900.text-white.shadow-lg {
+  background-color: rgb(var(--active-bg))  !important;
+  color:            rgb(var(--active-text)) !important;
+}
+
+/* All interactive elements get a snappier transition in dark mode */
+.dark button,
+.dark a {
+  transition-duration: 150ms !important;
+}
+
+/* Shadows — soften in dark mode */
+.dark .shadow-stone-200\/30 { --tw-shadow-color: rgba(0,0,0,0.4) !important; }
+.dark .shadow-stone-200     { --tw-shadow-color: rgba(0,0,0,0.5) !important; }
+
+/* Input / textarea */
+.dark input,
+.dark textarea {
+  background-color: rgb(var(--bg-raised));
+  color: rgb(var(--text-primary));
+  border-color: rgb(var(--border));
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: rgb(var(--text-muted));
+}
+
+/* Scrollbar */
+.dark ::-webkit-scrollbar-track { background: rgb(var(--bg-base)); }
+.dark ::-webkit-scrollbar-thumb { background: rgb(var(--border)); border-radius: 4px; }
 

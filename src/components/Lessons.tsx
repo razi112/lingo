@@ -1,20 +1,139 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   CheckCircle2, 
-  Circle, 
   Play, 
   ChevronRight, 
   Lock, 
-  MoreHorizontal,
-  ArrowLeft,
   X,
   Volume2,
-  GraduationCap
+  GraduationCap,
+  Pencil,
+  Trophy,
+  Star,
+  BookMarked,
+  Sparkles,
 } from "lucide-react";
 import { speak } from "../lib/speech";
 import { cn } from "../lib/utils";
 import { api } from "../services/api";
+
+// ─── Fill-in-the-blank types ───────────────────────────────────────────────
+type FillQuestion = {
+  sentence: string;   // use ___ as the blank
+  options: string[];
+  answer: string;
+  hint?: string;      // optional Malayalam hint
+};
+
+type FillExercise = {
+  tenseLabel: string;
+  questions: FillQuestion[];
+};
+
+// ─── Pronunciation guide types ─────────────────────────────────────────────
+type PronTerm = {
+  word: string;       // display text
+  ipa: string;        // IPA / phonetic spelling
+  speakText: string;  // what to pass to speak()
+  noteMl?: string;    // optional Malayalam tip
+};
+
+type PronunciationGuide = {
+  formula: string;        // e.g. "Subject + verb+s/es"
+  formulaMl: string;      // Malayalam translation of formula
+  keyTerms: PronTerm[];
+};
+
+// ─── Pronunciation guide component ────────────────────────────────────────
+function PronunciationPanel({ guide }: { guide: PronunciationGuide }) {
+  const [open, setOpen] = useState(false);
+  const [speaking, setSpeaking] = useState<string | null>(null);
+
+  const handleSpeak = (term: PronTerm) => {
+    setSpeaking(term.word);
+    speak(term.speakText);
+    setTimeout(() => setSpeaking(null), 2000);
+  };
+
+  return (
+    <div className="w-full rounded-[2rem] border border-stone-200 bg-white overflow-hidden shadow-sm">
+      {/* Header toggle */}
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-6 py-4 hover:bg-stone-50 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-xl bg-violet-100 flex items-center justify-center shrink-0">
+            <Volume2 className="w-4 h-4 text-violet-600" />
+          </div>
+          <div className="text-left">
+            <p className="text-xs font-bold uppercase tracking-widest text-stone-400">Pronunciation Guide</p>
+            <p className="text-sm font-semibold text-stone-900 font-mono">{guide.formula}</p>
+          </div>
+        </div>
+        <motion.div animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }}>
+          <ChevronRight className="w-4 h-4 text-stone-400 rotate-90" />
+        </motion.div>
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="overflow-hidden"
+          >
+            <div className="px-6 pb-6 space-y-4 border-t border-stone-100">
+              {/* Formula row */}
+              <div className="pt-4 flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Formula:</span>
+                <code className="px-3 py-1 rounded-lg bg-violet-50 text-violet-700 text-sm font-mono font-bold">
+                  {guide.formula}
+                </code>
+                <span className="text-sm text-stone-400 italic">{guide.formulaMl}</span>
+              </div>
+
+              {/* Key terms grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {guide.keyTerms.map((term) => (
+                  <div
+                    key={term.word}
+                    className="flex items-center gap-3 p-3 rounded-2xl bg-stone-50 border border-stone-100"
+                  >
+                    <button
+                      onClick={() => handleSpeak(term)}
+                      className={cn(
+                        "w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-all",
+                        speaking === term.word
+                          ? "bg-violet-600 text-white scale-110"
+                          : "bg-white border border-stone-200 text-stone-600 hover:bg-violet-50 hover:border-violet-300 hover:text-violet-600"
+                      )}
+                      title={`Hear "${term.word}"`}
+                    >
+                      <Volume2 className="w-4 h-4" />
+                    </button>
+                    <div className="min-w-0">
+                      <div className="flex items-baseline gap-2 flex-wrap">
+                        <span className="font-bold text-stone-900 text-sm">{term.word}</span>
+                        <span className="text-xs text-violet-600 font-mono">{term.ipa}</span>
+                      </div>
+                      {term.noteMl && (
+                        <p className="text-xs text-stone-400 truncate">{term.noteMl}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 type LessonItem = {
   id: string;
@@ -72,7 +191,7 @@ export default function Lessons({ userData }: { userData: any }) {
   };
 
   if (activeLesson) {
-    return <LessonInterface lesson={activeLesson} onClose={() => setActiveLesson(null)} />;
+    return <LessonInterface lesson={activeLesson} onClose={() => setActiveLesson(null)} userData={userData} />;
   }
 
   return (
@@ -181,13 +300,559 @@ export default function Lessons({ userData }: { userData: any }) {
   );
 }
 
-function LessonInterface({ lesson, onClose }: { lesson: LessonItem, onClose: () => void }) {
+// ─── Fill-in-the-blank data ────────────────────────────────────────────────
+
+const PRESENT_FILL_EXERCISES: FillExercise[] = [
+  {
+    tenseLabel: "Simple Present",
+    questions: [
+      { sentence: "She ___ to school every day.", options: ["go", "goes", "going", "went"], answer: "goes", hint: "He/She/It → verb + s" },
+      { sentence: "Water ___ at 100°C.", options: ["boil", "boils", "boiled", "boiling"], answer: "boils", hint: "Scientific fact → Simple Present" },
+      { sentence: "They ___ English at home.", options: ["speaks", "speak", "spoke", "speaking"], answer: "speak", hint: "They → base verb (no 's')" },
+    ],
+  },
+  {
+    tenseLabel: "Present Continuous",
+    questions: [
+      { sentence: "Look! It ___ raining outside.", options: ["is", "are", "was", "be"], answer: "is", hint: "It → is + verb-ing" },
+      { sentence: "We ___ preparing for the exam.", options: ["is", "am", "are", "were"], answer: "are", hint: "We → are + verb-ing" },
+      { sentence: "She ___ listening to music right now.", options: ["is", "are", "was", "has"], answer: "is", hint: "She → is + verb-ing" },
+    ],
+  },
+  {
+    tenseLabel: "Present Perfect",
+    questions: [
+      { sentence: "I ___ lost my keys.", options: ["have", "has", "had", "am"], answer: "have", hint: "I → have + past participle" },
+      { sentence: "She ___ gone to Dubai.", options: ["have", "has", "had", "is"], answer: "has", hint: "She → has + past participle" },
+      { sentence: "___ you seen this movie before?", options: ["Have", "Has", "Had", "Did"], answer: "Have", hint: "You → Have + subject + past participle?" },
+    ],
+  },
+  {
+    tenseLabel: "Present Perfect Continuous",
+    questions: [
+      { sentence: "It ___ been raining all day.", options: ["have", "has", "had", "is"], answer: "has", hint: "It → has been + verb-ing" },
+      { sentence: "How long ___ you been waiting?", options: ["have", "has", "had", "are"], answer: "have", hint: "You → have been + verb-ing" },
+      { sentence: "They ___ been arguing for hours.", options: ["have", "has", "had", "are"], answer: "have", hint: "They → have been + verb-ing" },
+    ],
+  },
+];
+
+const PAST_FILL_EXERCISES: FillExercise[] = [
+  {
+    tenseLabel: "Simple Past",
+    questions: [
+      { sentence: "She ___ Kochi yesterday.", options: ["visit", "visits", "visited", "visiting"], answer: "visited", hint: "Yesterday → Simple Past (verb + ed)" },
+      { sentence: "They ___ a movie last night.", options: ["watch", "watches", "watched", "watching"], answer: "watched", hint: "Last night → Simple Past" },
+      { sentence: "He ___ the ball perfectly.", options: ["catch", "catches", "caught", "catching"], answer: "caught", hint: "Irregular verb: catch → caught" },
+    ],
+  },
+  {
+    tenseLabel: "Past Continuous",
+    questions: [
+      { sentence: "I ___ eating when he called.", options: ["was", "were", "am", "is"], answer: "was", hint: "I → was + verb-ing" },
+      { sentence: "They ___ playing in the rain.", options: ["was", "were", "are", "is"], answer: "were", hint: "They → were + verb-ing" },
+      { sentence: "She ___ reading at 5 PM.", options: ["was", "were", "is", "has"], answer: "was", hint: "She → was + verb-ing" },
+    ],
+  },
+  {
+    tenseLabel: "Past Perfect",
+    questions: [
+      { sentence: "I ___ eaten before he arrived.", options: ["have", "has", "had", "was"], answer: "had", hint: "Action before another past action → had + past participle" },
+      { sentence: "She ___ left when I reached.", options: ["have", "has", "had", "was"], answer: "had", hint: "She had already left → had + past participle" },
+      { sentence: "The train ___ departed at 9.", options: ["have", "has", "had", "was"], answer: "had", hint: "Completed before another past event → had + past participle" },
+    ],
+  },
+  {
+    tenseLabel: "Past Perfect Continuous",
+    questions: [
+      { sentence: "I ___ been studying for an hour.", options: ["have", "has", "had", "was"], answer: "had", hint: "Duration in the past → had been + verb-ing" },
+      { sentence: "She ___ been living here since 2010.", options: ["have", "has", "had", "was"], answer: "had", hint: "She had been living → had been + verb-ing" },
+      { sentence: "They ___ been working all night.", options: ["have", "has", "had", "were"], answer: "had", hint: "They had been working → had been + verb-ing" },
+    ],
+  },
+];
+
+const FUTURE_FILL_EXERCISES: FillExercise[] = [
+  {
+    tenseLabel: "Simple Future",
+    questions: [
+      { sentence: "I ___ call you tonight.", options: ["will", "would", "shall", "am"], answer: "will", hint: "Future decision → will + base verb" },
+      { sentence: "It ___ rain in the evening.", options: ["will", "would", "is", "was"], answer: "will", hint: "Future prediction → will + base verb" },
+      { sentence: "They ___ win the match.", options: ["will", "would", "are", "were"], answer: "will", hint: "Future prediction → will + base verb" },
+    ],
+  },
+  {
+    tenseLabel: "Future Continuous",
+    questions: [
+      { sentence: "I ___ be eating at 8 PM.", options: ["will", "would", "am", "was"], answer: "will", hint: "Ongoing future action → will be + verb-ing" },
+      { sentence: "She will be ___ for the test.", options: ["study", "studies", "studied", "studying"], answer: "studying", hint: "will be + verb-ing" },
+      { sentence: "We will be ___ for you.", options: ["wait", "waits", "waited", "waiting"], answer: "waiting", hint: "will be + verb-ing" },
+    ],
+  },
+  {
+    tenseLabel: "Future Perfect",
+    questions: [
+      { sentence: "I will ___ finished the work by 5 PM.", options: ["have", "has", "had", "be"], answer: "have", hint: "Completed in future → will have + past participle" },
+      { sentence: "They will have ___ before you.", options: ["arrive", "arrives", "arrived", "arriving"], answer: "arrived", hint: "will have + past participle" },
+      { sentence: "She will have ___ next year.", options: ["graduate", "graduates", "graduated", "graduating"], answer: "graduated", hint: "will have + past participle" },
+    ],
+  },
+  {
+    tenseLabel: "Future Perfect Continuous",
+    questions: [
+      { sentence: "I will have been ___ for 3 hours.", options: ["study", "studies", "studied", "studying"], answer: "studying", hint: "Future duration → will have been + verb-ing" },
+      { sentence: "She will have been ___ for a decade.", options: ["work", "works", "worked", "working"], answer: "working", hint: "will have been + verb-ing" },
+      { sentence: "They will have been ___ till sunset.", options: ["play", "plays", "played", "playing"], answer: "playing", hint: "will have been + verb-ing" },
+    ],
+  },
+];
+
+// ─── Fill-in-the-blank exercise component ─────────────────────────────────
+
+function FillExerciseStep({
+  exercise,
+  onComplete,
+}: {
+  exercise: FillExercise;
+  onComplete: (correct: number, total: number) => void;
+}) {
+  const [qIndex, setQIndex] = useState(0);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [score, setScore] = useState(0);
+  const [done, setDone] = useState(false);
+
+  const q = exercise.questions[qIndex];
+  const isCorrect = selected === q.answer;
+
+  const handleConfirm = () => {
+    if (!selected) return;
+    setConfirmed(true);
+    if (selected === q.answer) setScore((s) => s + 1);
+  };
+
+  const handleNext = () => {
+    if (qIndex < exercise.questions.length - 1) {
+      setQIndex((i) => i + 1);
+      setSelected(null);
+      setConfirmed(false);
+    } else {
+      setDone(true);
+    }
+  };
+
+  const finalScore = done ? (isCorrect ? score : score) : score;
+
+  if (done) {
+    const total = exercise.questions.length;
+    const correct = confirmed && isCorrect ? score : score;
+    return (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="flex flex-col items-center gap-8 py-8"
+      >
+        <div className={cn(
+          "w-24 h-24 rounded-full flex items-center justify-center text-white shadow-xl",
+          correct === total ? "bg-green-500" : correct >= Math.ceil(total / 2) ? "bg-amber-500" : "bg-red-400"
+        )}>
+          <Trophy className="w-12 h-12" />
+        </div>
+        <div className="space-y-2 text-center">
+          <h3 className="text-4xl font-display font-medium">
+            {correct === total ? "Perfect!" : correct >= Math.ceil(total / 2) ? "Good job!" : "Keep practising!"}
+          </h3>
+          <p className="text-stone-500 text-lg">
+            You got <span className="font-bold text-stone-900">{correct}</span> out of <span className="font-bold text-stone-900">{total}</span> correct.
+          </p>
+        </div>
+        <button
+          onClick={() => onComplete(correct, total)}
+          className="px-10 py-4 bg-stone-900 text-white rounded-[2rem] font-bold text-base hover:scale-105 active:scale-95 transition-all shadow-lg"
+        >
+          Continue
+        </button>
+      </motion.div>
+    );
+  }
+
+  // Build the display sentence with the blank highlighted
+  const parts = q.sentence.split("___");
+
+  return (
+    <motion.div
+      key={qIndex}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className="w-full space-y-8"
+    >
+      {/* Header */}
+      <div className="space-y-2 text-center">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-stone-900 text-white text-[10px] font-bold uppercase tracking-widest">
+          <Pencil className="w-3 h-3" /> Fill in the Blank · {exercise.tenseLabel}
+        </div>
+        <p className="text-xs text-stone-400 font-mono">
+          Question {qIndex + 1} of {exercise.questions.length}
+        </p>
+      </div>
+
+      {/* Sentence */}
+      <div className="p-8 rounded-[2.5rem] bg-white border border-stone-200 shadow-xl shadow-stone-200/30 text-center">
+        <p className="text-2xl md:text-3xl font-display leading-relaxed text-stone-900">
+          {parts[0]}
+          <span className={cn(
+            "inline-block min-w-[120px] border-b-4 mx-2 px-3 font-bold transition-colors",
+            !confirmed ? "border-stone-400 text-stone-400" :
+            isCorrect ? "border-green-500 text-green-600" : "border-red-400 text-red-500"
+          )}>
+            {selected ?? "___"}
+          </span>
+          {parts[1]}
+        </p>
+        {q.hint && (
+          <p className="mt-4 text-sm text-stone-400 italic">💡 {q.hint}</p>
+        )}
+      </div>
+
+      {/* Options */}
+      <div className="grid grid-cols-2 gap-4">
+        {q.options.map((opt) => {
+          let style = "border-stone-200 text-stone-700 hover:border-stone-900 hover:bg-stone-50";
+          if (confirmed) {
+            if (opt === q.answer) style = "border-green-500 bg-green-50 text-green-700";
+            else if (opt === selected) style = "border-red-400 bg-red-50 text-red-600";
+            else style = "border-stone-100 text-stone-300 cursor-not-allowed";
+          } else if (opt === selected) {
+            style = "border-stone-900 bg-stone-900 text-white";
+          }
+          return (
+            <button
+              key={opt}
+              disabled={confirmed}
+              onClick={() => setSelected(opt)}
+              className={cn(
+                "px-6 py-4 rounded-2xl border-2 font-bold text-base transition-all",
+                style
+              )}
+            >
+              {opt}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Feedback */}
+      <AnimatePresence>
+        {confirmed && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={cn(
+              "p-4 rounded-2xl text-center font-bold text-base",
+              isCorrect ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-600 border border-red-200"
+            )}
+          >
+            {isCorrect ? "✅ Correct! Well done." : `❌ The correct answer is "${q.answer}".`}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Action button */}
+      {!confirmed ? (
+        <button
+          disabled={!selected}
+          onClick={handleConfirm}
+          className={cn(
+            "w-full py-4 rounded-[2rem] font-bold text-base transition-all",
+            selected
+              ? "bg-stone-900 text-white hover:scale-105 active:scale-95 shadow-lg"
+              : "bg-stone-100 text-stone-300 cursor-not-allowed"
+          )}
+        >
+          Check Answer
+        </button>
+      ) : (
+        <button
+          onClick={handleNext}
+          className="w-full py-4 bg-stone-900 text-white rounded-[2rem] font-bold text-base hover:scale-105 active:scale-95 transition-all shadow-lg"
+        >
+          {qIndex < exercise.questions.length - 1 ? "Next Question →" : "See Results"}
+        </button>
+      )}
+    </motion.div>
+  );
+}
+
+// ─── Bonus vocabulary words per grammar lesson ────────────────────────────
+const BONUS_VOCAB: Record<string, { word: string; ipa: string; meaning: string; example: string }[]> = {
+  "present tenses": [
+    { word: "habitually",   ipa: "/həˈbɪtʃuəli/",  meaning: "regularly, as a habit",          example: "She habitually wakes up at 6 AM." },
+    { word: "currently",    ipa: "/ˈkʌrəntli/",    meaning: "at the present time",             example: "I am currently studying English." },
+    { word: "recently",     ipa: "/ˈriːsəntli/",   meaning: "not long ago",                    example: "I have recently moved to Kochi." },
+    { word: "duration",     ipa: "/djʊˈreɪʃən/",   meaning: "the length of time something lasts", example: "The duration of the class is 2 hours." },
+  ],
+  "past tenses": [
+    { word: "previously",   ipa: "/ˈpriːviəsli/",  meaning: "at an earlier time",              example: "I had previously visited Dubai." },
+    { word: "interrupted",  ipa: "/ˌɪntəˈrʌptɪd/", meaning: "stopped or broken mid-action",   example: "The call interrupted my meal." },
+    { word: "prior",        ipa: "/ˈpraɪər/",      meaning: "before in time or order",         example: "Prior to the meeting, I had eaten." },
+    { word: "elapsed",      ipa: "/ɪˈlæpst/",      meaning: "(of time) passed",                example: "Three hours had elapsed." },
+  ],
+  "future tenses": [
+    { word: "eventually",   ipa: "/ɪˈventʃuəli/",  meaning: "at some later time",              example: "She will eventually learn to drive." },
+    { word: "anticipate",   ipa: "/ænˈtɪsɪpeɪt/",  meaning: "expect or predict",               example: "I anticipate finishing by Friday." },
+    { word: "forthcoming",  ipa: "/ˌfɔːθˈkʌmɪŋ/",  meaning: "about to happen",                 example: "The forthcoming exam will be tough." },
+    { word: "imminent",     ipa: "/ˈɪmɪnənt/",     meaning: "about to happen very soon",       example: "Rain is imminent — take an umbrella." },
+  ],
+};
+
+// ─── Confetti particle component ──────────────────────────────────────────
+const CONFETTI_COLORS = [
+  "#f59e0b", "#10b981", "#3b82f6", "#8b5cf6",
+  "#ef4444", "#f97316", "#06b6d4", "#ec4899",
+];
+
+function ConfettiBlast() {
+  const particles = useRef(
+    Array.from({ length: 48 }, (_, i) => ({
+      id: i,
+      x: Math.random() * 100,
+      delay: Math.random() * 0.6,
+      duration: 1.8 + Math.random() * 1.2,
+      color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+      size: 6 + Math.random() * 8,
+      rotate: Math.random() * 360,
+      drift: (Math.random() - 0.5) * 120,
+    }))
+  ).current;
+
+  return (
+    <div className="pointer-events-none fixed inset-0 overflow-hidden z-50" aria-hidden>
+      {particles.map((p) => (
+        <motion.div
+          key={p.id}
+          initial={{ y: -20, x: `${p.x}vw`, opacity: 1, rotate: p.rotate, scale: 1 }}
+          animate={{ y: "110vh", x: `calc(${p.x}vw + ${p.drift}px)`, opacity: 0, rotate: p.rotate + 360, scale: 0.4 }}
+          transition={{ duration: p.duration, delay: p.delay, ease: "easeIn" }}
+          style={{
+            position: "fixed",
+            top: 0,
+            width: p.size,
+            height: p.size * 0.5,
+            borderRadius: 2,
+            backgroundColor: p.color,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ─── Reward summary screen ─────────────────────────────────────────────────
+type RewardSummaryProps = {
+  lesson: LessonItem;
+  fillScores: { correct: number; total: number }[];
+  fillExercises: FillExercise[];
+  userData: any;
+  onClose: () => void;
+};
+
+function RewardSummary({ lesson, fillScores, fillExercises, userData, onClose }: RewardSummaryProps) {
+  const totalCorrect = fillScores.reduce((a, s) => a + s.correct, 0);
+  const totalQ       = fillScores.reduce((a, s) => a + s.total, 0);
+  const overallPct   = Math.round((totalCorrect / Math.max(1, totalQ)) * 100);
+  const xpGained     = totalCorrect * 10 + (overallPct === 100 ? 25 : 0); // bonus 25 XP for perfect
+
+  // Pick a bonus vocab word based on lesson title
+  const titleKey = Object.keys(BONUS_VOCAB).find((k) =>
+    lesson.title.toLowerCase().includes(k)
+  );
+  const vocabPool = titleKey ? BONUS_VOCAB[titleKey] : [];
+  const bonusWord = vocabPool[Math.floor(Math.random() * vocabPool.length)];
+
+  // Save progress + add bonus word to vocabulary on mount
+  useEffect(() => {
+    if (userData?.id) {
+      api.saveProgress(userData.id, lesson.id, overallPct, xpGained).catch(() => {});
+      if (bonusWord) {
+        api.reviewVocabulary(userData.id, bonusWord.word, true).catch(() => {});
+      }
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const isPerfect = overallPct === 100;
+
+  return (
+    <>
+      {/* Confetti only on perfect or high score */}
+      {overallPct >= 70 && <ConfettiBlast />}
+
+      <motion.div
+        key="reward-summary"
+        initial={{ opacity: 0, scale: 0.92 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
+        className="w-full space-y-8"
+      >
+        {/* Trophy + headline */}
+        <div className="flex flex-col items-center gap-4">
+          <motion.div
+            initial={{ scale: 0, rotate: -20 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ type: "spring", stiffness: 260, damping: 18, delay: 0.1 }}
+            className={cn(
+              "w-28 h-28 rounded-full flex items-center justify-center shadow-2xl",
+              isPerfect
+                ? "bg-gradient-to-br from-amber-400 to-orange-500"
+                : overallPct >= 70
+                ? "bg-gradient-to-br from-emerald-400 to-teal-500"
+                : "bg-gradient-to-br from-stone-400 to-stone-600"
+            )}
+          >
+            <Trophy className="w-14 h-14 text-white drop-shadow-lg" />
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25 }}
+            className="text-center space-y-1"
+          >
+            <h2 className="text-5xl font-display font-medium">
+              {isPerfect ? "Perfect!" : overallPct >= 70 ? "Well done!" : "Keep going!"}
+            </h2>
+            <p className="text-stone-500 text-lg">
+              {lesson.title} complete
+              {isPerfect && " · Bonus +25 XP 🎉"}
+            </p>
+          </motion.div>
+        </div>
+
+        {/* Per-tense score grid */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.35 }}
+          className="grid grid-cols-2 gap-3 w-full"
+        >
+          {fillScores.map((s, i) => {
+            const pct = Math.round((s.correct / s.total) * 100);
+            return (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.4 + i * 0.07 }}
+                className={cn(
+                  "p-5 rounded-[1.75rem] border text-left space-y-1",
+                  pct === 100 ? "bg-green-50 border-green-200" :
+                  pct >= 50  ? "bg-amber-50 border-amber-200"  : "bg-red-50 border-red-200"
+                )}
+              >
+                <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">
+                  {fillExercises[i]?.tenseLabel ?? `Tense ${i + 1}`}
+                </p>
+                <p className="text-3xl font-display font-bold text-stone-900">{pct}%</p>
+                <p className="text-xs text-stone-500">{s.correct}/{s.total} correct</p>
+              </motion.div>
+            );
+          })}
+        </motion.div>
+
+        {/* XP + overall stats */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.55 }}
+          className="grid grid-cols-2 gap-4"
+        >
+          <div className="p-6 rounded-2xl bg-stone-900 text-white flex flex-col gap-1">
+            <div className="flex items-center gap-2 text-stone-400 text-[10px] font-bold uppercase tracking-widest">
+              <Sparkles className="w-3.5 h-3.5" /> XP Gained
+            </div>
+            <div className="text-3xl font-display font-bold">+{xpGained}</div>
+          </div>
+          <div className="p-6 rounded-2xl bg-stone-100 border border-stone-200 flex flex-col gap-1">
+            <div className="flex items-center gap-2 text-stone-400 text-[10px] font-bold uppercase tracking-widest">
+              <Star className="w-3.5 h-3.5" /> Overall
+            </div>
+            <div className="text-3xl font-display font-bold text-stone-900">{overallPct}%</div>
+          </div>
+        </motion.div>
+
+        {/* Bonus vocabulary word */}
+        {bonusWord && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.65 }}
+            className="w-full p-6 rounded-[2rem] bg-violet-50 border border-violet-200 space-y-3"
+          >
+            <div className="flex items-center gap-2">
+              <BookMarked className="w-4 h-4 text-violet-600" />
+              <span className="text-[10px] font-bold uppercase tracking-widest text-violet-500">
+                Bonus Word Added to Vault
+              </span>
+            </div>
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-baseline gap-3">
+                  <span className="text-2xl font-display font-bold text-stone-900">{bonusWord.word}</span>
+                  <span className="text-sm font-mono text-violet-600">{bonusWord.ipa}</span>
+                  <button
+                    onClick={() => speak(bonusWord.word)}
+                    className="w-7 h-7 rounded-lg bg-violet-100 flex items-center justify-center text-violet-600 hover:bg-violet-200 transition-colors"
+                    title="Hear pronunciation"
+                  >
+                    <Volume2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <p className="text-sm text-stone-500">{bonusWord.meaning}</p>
+                <p className="text-sm text-stone-700 italic">"{bonusWord.example}"</p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        <motion.button
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.75 }}
+          onClick={onClose}
+          className="w-full py-5 bg-stone-900 text-white rounded-[2rem] font-bold text-lg hover:scale-105 active:scale-95 transition-all shadow-xl shadow-stone-200"
+        >
+          Finish Pathway ✓
+        </motion.button>
+      </motion.div>
+    </>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+
+function LessonInterface({ lesson, onClose, userData }: { lesson: LessonItem, onClose: () => void, userData: any }) {
   const [step, setStep] = useState(0);
+  // For grammar lessons: track which fill exercise we're on and scores
+  const [fillIndex, setFillIndex] = useState(0);
+  const [fillScores, setFillScores] = useState<{ correct: number; total: number }[]>([]);
+  const [showingFill, setShowingFill] = useState(false);
   
   const presentTenses = [
     { 
       name: "Simple Present", 
       nameMl: "സാധാരണ വർത്തമാന കാലം",
+      pronunciation: {
+        formula: "Subject + V1 (he/she/it → V1+s)",
+        formulaMl: "കർത്താവ് + ക്രിയ (he/she/it → ക്രിയ+s)",
+        keyTerms: [
+          { word: "speak", ipa: "/spiːk/", speakText: "speak", noteMl: "സ്പീക്ക് — 'ea' = ഈ ശബ്ദം" },
+          { word: "speaks", ipa: "/spiːks/", speakText: "speaks", noteMl: "He/She/It → speaks" },
+          { word: "arrives", ipa: "/əˈraɪvz/", speakText: "arrives", noteMl: "അറൈവ്സ് — 'es' = z ശബ്ദം" },
+          { word: "boils", ipa: "/bɔɪlz/", speakText: "boils", noteMl: "ബോയിൽസ് — 'oi' = ഒയ്" },
+          { word: "goes", ipa: "/ɡəʊz/", speakText: "goes", noteMl: "ഗോസ് — go → goes (irregular)" },
+        ],
+      } as PronunciationGuide,
       examples: [
         { en: "They speak English.", ml: "അവർ ഇംഗ്ലീഷ് സംസാരിക്കുന്നു." },
         { en: "The train arrives at 10.", ml: "ട്രെയിൻ 10 മണിക്ക് എത്തുന്നു." },
@@ -202,6 +867,17 @@ function LessonInterface({ lesson, onClose }: { lesson: LessonItem, onClose: () 
     { 
       name: "Present Continuous", 
       nameMl: "തുടരുന്ന വർത്തമാന കാലം",
+      pronunciation: {
+        formula: "Subject + am/is/are + V-ing",
+        formulaMl: "കർത്താവ് + am/is/are + ക്രിയ-ing",
+        keyTerms: [
+          { word: "is raining", ipa: "/ɪz ˈreɪnɪŋ/", speakText: "is raining", noteMl: "ഇസ് റെയ്നിംഗ് — It → is" },
+          { word: "are dancing", ipa: "/ɑː ˈdɑːnsɪŋ/", speakText: "are dancing", noteMl: "ആർ ഡാൻസിംഗ് — They → are" },
+          { word: "am preparing", ipa: "/æm prɪˈpeərɪŋ/", speakText: "am preparing", noteMl: "ആം പ്രിപ്പേറിംഗ് — I → am" },
+          { word: "listening", ipa: "/ˈlɪsənɪŋ/", speakText: "listening", noteMl: "ലിസ്സനിംഗ് — 't' silent" },
+          { word: "moving", ipa: "/ˈmuːvɪŋ/", speakText: "moving", noteMl: "മൂവിംഗ് — drop 'e', add -ing" },
+        ],
+      } as PronunciationGuide,
       examples: [
         { en: "Look! It is raining.", ml: "നോക്കൂ! മഴ പെയ്യുകയാണ്." },
         { en: "They are dancing.", ml: "അവർ നൃത്തം ചെയ്യുകയാണ്." },
@@ -216,6 +892,17 @@ function LessonInterface({ lesson, onClose }: { lesson: LessonItem, onClose: () 
     { 
       name: "Present Perfect", 
       nameMl: "സമ്പൂർണ്ണ വർത്തമാന കാലം",
+      pronunciation: {
+        formula: "Subject + have/has + V3 (past participle)",
+        formulaMl: "കർത്താവ് + have/has + ക്രിയയുടെ മൂന്നാം രൂപം",
+        keyTerms: [
+          { word: "have lost", ipa: "/hæv lɒst/", speakText: "have lost", noteMl: "ഹാവ് ലോസ്റ്റ് — lose → lost (irregular)" },
+          { word: "has gone", ipa: "/hæz ɡɒn/", speakText: "has gone", noteMl: "ഹാസ് ഗോൺ — go → gone (irregular)" },
+          { word: "have bought", ipa: "/hæv bɔːt/", speakText: "have bought", noteMl: "ഹാവ് ബോട്ട് — buy → bought" },
+          { word: "has broken", ipa: "/hæz ˈbrəʊkən/", speakText: "has broken", noteMl: "ഹാസ് ബ്രോക്കൺ — break → broken" },
+          { word: "Have you seen", ipa: "/hæv juː siːn/", speakText: "Have you seen", noteMl: "ചോദ്യം: Have + subject + V3?" },
+        ],
+      } as PronunciationGuide,
       examples: [
         { en: "I have lost my keys.", ml: "എനിക്ക് താക്കോൽ നഷ്ടപ്പെട്ടു." },
         { en: "Have you seen this movie?", ml: "നീ ഈ സിനിമ കണ്ടിട്ടുണ്ടോ?" },
@@ -230,6 +917,17 @@ function LessonInterface({ lesson, onClose }: { lesson: LessonItem, onClose: () 
     { 
       name: "Present Perfect Continuous", 
       nameMl: "തുടർച്ചയായ സമ്പൂർണ്ണ വർത്തമാന കാലം",
+      pronunciation: {
+        formula: "Subject + have/has + been + V-ing",
+        formulaMl: "കർത്താവ് + have/has + been + ക്രിയ-ing",
+        keyTerms: [
+          { word: "has been raining", ipa: "/hæz bɪn ˈreɪnɪŋ/", speakText: "has been raining", noteMl: "ഹാസ് ബിൻ റെയ്നിംഗ്" },
+          { word: "have been waiting", ipa: "/hæv bɪn ˈweɪtɪŋ/", speakText: "have been waiting", noteMl: "ഹാവ് ബിൻ വെയ്റ്റിംഗ്" },
+          { word: "have been staying", ipa: "/hæv bɪn ˈsteɪɪŋ/", speakText: "have been staying", noteMl: "ഹാവ് ബിൻ സ്റ്റേയിംഗ്" },
+          { word: "since", ipa: "/sɪns/", speakText: "since June", noteMl: "സിൻസ് — ഒരു നിശ്ചിത സമയം മുതൽ" },
+          { word: "for", ipa: "/fɔː/", speakText: "for hours", noteMl: "ഫോർ — ഒരു കാലയളവ്" },
+        ],
+      } as PronunciationGuide,
       examples: [
         { en: "It has been raining all day.", ml: "ദിവസം മുഴുവൻ മഴ പെയ്യുകയായിരുന്നു." },
         { en: "How long have you been waiting?", ml: "നീ എത്ര നേരമായി കാത്തിരിക്കുന്നു?" },
@@ -247,6 +945,17 @@ function LessonInterface({ lesson, onClose }: { lesson: LessonItem, onClose: () 
     { 
       name: "Simple Past", 
       nameMl: "ഭൂതകാലം",
+      pronunciation: {
+        formula: "Subject + V2 (past form)",
+        formulaMl: "കർത്താവ് + ക്രിയയുടെ രണ്ടാം രൂപം",
+        keyTerms: [
+          { word: "ate", ipa: "/eɪt/", speakText: "ate", noteMl: "എയ്റ്റ് — eat → ate (irregular)" },
+          { word: "visited", ipa: "/ˈvɪzɪtɪd/", speakText: "visited", noteMl: "വിസിറ്റഡ് — regular: +ed" },
+          { word: "watched", ipa: "/wɒtʃt/", speakText: "watched", noteMl: "വോച്ട് — -ed = t ശബ്ദം" },
+          { word: "caught", ipa: "/kɔːt/", speakText: "caught", noteMl: "കോട്ട് — catch → caught (irregular)" },
+          { word: "finished", ipa: "/ˈfɪnɪʃt/", speakText: "finished", noteMl: "ഫിനിഷ്ട് — -ed = t ശബ്ദം" },
+        ],
+      } as PronunciationGuide,
       examples: [
         { en: "I ate dinner at 8 PM.", ml: "ഞാൻ രാത്രി 8 മണിക്ക് ഭക്ഷണം കഴിച്ചു." },
         { en: "She visited Kochi yesterday.", ml: "അവൾ ഇന്നലെ കൊച്ചി സന്ദർശിച്ചു." },
@@ -261,6 +970,17 @@ function LessonInterface({ lesson, onClose }: { lesson: LessonItem, onClose: () 
     { 
       name: "Past Continuous", 
       nameMl: "തുടരുന്ന ഭൂതകാലം",
+      pronunciation: {
+        formula: "Subject + was/were + V-ing",
+        formulaMl: "കർത്താവ് + was/were + ക്രിയ-ing",
+        keyTerms: [
+          { word: "was eating", ipa: "/wɒz ˈiːtɪŋ/", speakText: "was eating", noteMl: "വോസ് ഈറ്റിംഗ് — I/He/She/It → was" },
+          { word: "were playing", ipa: "/wɜː ˈpleɪɪŋ/", speakText: "were playing", noteMl: "വേർ പ്ലേയിംഗ് — They/We/You → were" },
+          { word: "was reading", ipa: "/wɒz ˈriːdɪŋ/", speakText: "was reading", noteMl: "വോസ് റീഡിംഗ്" },
+          { word: "getting", ipa: "/ˈɡetɪŋ/", speakText: "getting", noteMl: "ഗെറ്റിംഗ് — double 't' before -ing" },
+          { word: "waiting", ipa: "/ˈweɪtɪŋ/", speakText: "waiting", noteMl: "വെയ്റ്റിംഗ്" },
+        ],
+      } as PronunciationGuide,
       examples: [
         { en: "I was eating when he called.", ml: "അവൻ വിളിക്കുമ്പോൾ ഞാൻ ഭക്ഷണം കഴിക്കുകയായിരുന്നു." },
         { en: "She was reading at 5 PM.", ml: "അവൾ 5 മണിക്ക് വായിക്കുകയായിരുന്നു." },
@@ -275,6 +995,17 @@ function LessonInterface({ lesson, onClose }: { lesson: LessonItem, onClose: () 
     { 
       name: "Past Perfect", 
       nameMl: "സമ്പൂർണ്ണ ഭൂതകാലം",
+      pronunciation: {
+        formula: "Subject + had + V3 (past participle)",
+        formulaMl: "കർത്താവ് + had + ക്രിയയുടെ മൂന്നാം രൂപം",
+        keyTerms: [
+          { word: "had eaten", ipa: "/hæd ˈiːtən/", speakText: "had eaten", noteMl: "ഹാഡ് ഈറ്റൺ — eat → eaten" },
+          { word: "had left", ipa: "/hæd left/", speakText: "had left", noteMl: "ഹാഡ് ലെഫ്റ്റ് — leave → left" },
+          { word: "had seen", ipa: "/hæd siːn/", speakText: "had seen", noteMl: "ഹാഡ് സീൻ — see → seen" },
+          { word: "had departed", ipa: "/hæd dɪˈpɑːtɪd/", speakText: "had departed", noteMl: "ഹാഡ് ഡിപ്പാർട്ടഡ്" },
+          { word: "by then", ipa: "/baɪ ðen/", speakText: "by then", noteMl: "ബൈ ദെൻ — ആ സമയത്തിന് മുമ്പ്" },
+        ],
+      } as PronunciationGuide,
       examples: [
         { en: "I had eaten before he arrived.", ml: "അവൻ എത്തുന്നതിന് മുമ്പ് ഞാൻ ഭക്ഷണം കഴിച്ചിരുന്നു." },
         { en: "She had left when I reached.", ml: "ഞാൻ എത്തുമ്പോൾ അവൾ പോയിരുന്നു." },
@@ -289,6 +1020,17 @@ function LessonInterface({ lesson, onClose }: { lesson: LessonItem, onClose: () 
     { 
       name: "Past Perfect Continuous", 
       nameMl: "തുടർച്ചയായ സമ്പൂർണ്ണ ഭൂതകാലം",
+      pronunciation: {
+        formula: "Subject + had + been + V-ing",
+        formulaMl: "കർത്താവ് + had + been + ക്രിയ-ing",
+        keyTerms: [
+          { word: "had been studying", ipa: "/hæd bɪn ˈstʌdɪɪŋ/", speakText: "had been studying", noteMl: "ഹാഡ് ബിൻ സ്റ്റഡിയിംഗ്" },
+          { word: "had been living", ipa: "/hæd bɪn ˈlɪvɪŋ/", speakText: "had been living", noteMl: "ഹാഡ് ബിൻ ലിവിംഗ്" },
+          { word: "had been working", ipa: "/hæd bɪn ˈwɜːkɪŋ/", speakText: "had been working", noteMl: "ഹാഡ് ബിൻ വർക്കിംഗ്" },
+          { word: "since 2010", ipa: "/sɪns tuː ˈθaʊzənd ænd ten/", speakText: "since two thousand and ten", noteMl: "2010 മുതൽ" },
+          { word: "all night", ipa: "/ɔːl naɪt/", speakText: "all night", noteMl: "ഓൾ നൈറ്റ് — രാത്രി മുഴുവൻ" },
+        ],
+      } as PronunciationGuide,
       examples: [
         { en: "I had been studying for an hour.", ml: "ഞാൻ ഒരു മണിക്കൂറായി പഠിച്ചുകൊണ്ടിരിക്കുകയായിരുന്നു." },
         { en: "She had been living here since 2010.", ml: "അവൾ 2010 മുതൽ ഇവിടെ താമസിക്കുകയായിരുന്നു." },
@@ -306,6 +1048,17 @@ function LessonInterface({ lesson, onClose }: { lesson: LessonItem, onClose: () 
     { 
       name: "Simple Future", 
       nameMl: "ഭാവികാലം",
+      pronunciation: {
+        formula: "Subject + will + V1 (base verb)",
+        formulaMl: "കർത്താവ് + will + ക്രിയയുടെ ആദ്യ രൂപം",
+        keyTerms: [
+          { word: "will eat", ipa: "/wɪl iːt/", speakText: "will eat", noteMl: "വിൽ ഈറ്റ് — will + base verb" },
+          { word: "will visit", ipa: "/wɪl ˈvɪzɪt/", speakText: "will visit", noteMl: "വിൽ വിസിറ്റ്" },
+          { word: "will win", ipa: "/wɪl wɪn/", speakText: "will win", noteMl: "വിൽ വിൻ" },
+          { word: "will call", ipa: "/wɪl kɔːl/", speakText: "will call", noteMl: "വിൽ കോൾ — 'll = will (short form)" },
+          { word: "will rain", ipa: "/wɪl reɪn/", speakText: "will rain", noteMl: "വിൽ റെയ്ൻ — prediction" },
+        ],
+      } as PronunciationGuide,
       examples: [
         { en: "I will eat later.", ml: "ഞാൻ പിന്നീട് ഭക്ഷണം കഴിക്കും." },
         { en: "She will visit tomorrow.", ml: "അവൾ നാളെ സന്ദർിക്കും." },
@@ -320,6 +1073,17 @@ function LessonInterface({ lesson, onClose }: { lesson: LessonItem, onClose: () 
     { 
       name: "Future Continuous", 
       nameMl: "തുടരുന്ന ഭാവികാലം",
+      pronunciation: {
+        formula: "Subject + will be + V-ing",
+        formulaMl: "കർത്താവ് + will be + ക്രിയ-ing",
+        keyTerms: [
+          { word: "will be eating", ipa: "/wɪl biː ˈiːtɪŋ/", speakText: "will be eating", noteMl: "വിൽ ബി ഈറ്റിംഗ്" },
+          { word: "will be studying", ipa: "/wɪl biː ˈstʌdɪɪŋ/", speakText: "will be studying", noteMl: "വിൽ ബി സ്റ്റഡിയിംഗ്" },
+          { word: "will be traveling", ipa: "/wɪl biː ˈtrævəlɪŋ/", speakText: "will be traveling", noteMl: "വിൽ ബി ട്രാവലിംഗ്" },
+          { word: "will be waiting", ipa: "/wɪl biː ˈweɪtɪŋ/", speakText: "will be waiting", noteMl: "വിൽ ബി വെയ്റ്റിംഗ്" },
+          { word: "will be working", ipa: "/wɪl biː ˈwɜːkɪŋ/", speakText: "will be working", noteMl: "വിൽ ബി വർക്കിംഗ്" },
+        ],
+      } as PronunciationGuide,
       examples: [
         { en: "I will be eating at 8 PM.", ml: "ഞാൻ രാത്രി 8 മണിക്ക് ഭക്ഷണം കഴിച്ചുകൊണ്ടിരിക്കും." },
         { en: "She will be studying for the test.", ml: "അവൾ ടെസ്റ്റിനായി പഠിച്ചുകൊണ്ടിരിക്കും." },
@@ -334,6 +1098,17 @@ function LessonInterface({ lesson, onClose }: { lesson: LessonItem, onClose: () 
     { 
       name: "Future Perfect", 
       nameMl: "സമ്പൂർണ്ണ ഭാവികാലം",
+      pronunciation: {
+        formula: "Subject + will have + V3 (past participle)",
+        formulaMl: "കർത്താവ് + will have + ക്രിയയുടെ മൂന്നാം രൂപം",
+        keyTerms: [
+          { word: "will have finished", ipa: "/wɪl hæv ˈfɪnɪʃt/", speakText: "will have finished", noteMl: "വിൽ ഹാവ് ഫിനിഷ്ട്" },
+          { word: "will have graduated", ipa: "/wɪl hæv ˈɡrædʒueɪtɪd/", speakText: "will have graduated", noteMl: "വിൽ ഹാവ് ഗ്രാജ്വേറ്റഡ്" },
+          { word: "will have arrived", ipa: "/wɪl hæv əˈraɪvd/", speakText: "will have arrived", noteMl: "വിൽ ഹാവ് അറൈവ്ഡ്" },
+          { word: "by 5 PM", ipa: "/baɪ faɪv piː em/", speakText: "by five PM", noteMl: "ബൈ ഫൈവ് — ഒരു സമയത്തിന് മുമ്പ്" },
+          { word: "will have saved", ipa: "/wɪl hæv seɪvd/", speakText: "will have saved", noteMl: "വിൽ ഹാവ് സേവ്ഡ്" },
+        ],
+      } as PronunciationGuide,
       examples: [
         { en: "I will have finished the work by 5 PM.", ml: "ഞാൻ 5 മണിക്ക് മുമ്പ് ജോലി പൂർത്തിയാക്കിയിരിക്കും." },
         { en: "She will have graduated next year.", ml: "അവൾ അടുത്ത വർഷം ബിരുദം നേടും." },
@@ -348,6 +1123,17 @@ function LessonInterface({ lesson, onClose }: { lesson: LessonItem, onClose: () 
     { 
       name: "Future Perfect Continuous", 
       nameMl: "തുടർച്ചയായ സമ്പൂർണ്ണ ഭാവികാലം",
+      pronunciation: {
+        formula: "Subject + will have been + V-ing",
+        formulaMl: "കർത്താവ് + will have been + ക്രിയ-ing",
+        keyTerms: [
+          { word: "will have been studying", ipa: "/wɪl hæv bɪn ˈstʌdɪɪŋ/", speakText: "will have been studying", noteMl: "വിൽ ഹാവ് ബിൻ സ്റ്റഡിയിംഗ്" },
+          { word: "will have been working", ipa: "/wɪl hæv bɪn ˈwɜːkɪŋ/", speakText: "will have been working", noteMl: "വിൽ ഹാവ് ബിൻ വർക്കിംഗ്" },
+          { word: "will have been playing", ipa: "/wɪl hæv bɪn ˈpleɪɪŋ/", speakText: "will have been playing", noteMl: "വിൽ ഹാവ് ബിൻ പ്ലേയിംഗ്" },
+          { word: "for a decade", ipa: "/fɔː ə ˈdekeɪd/", speakText: "for a decade", noteMl: "ഫോർ എ ഡെക്കേഡ് — 10 വർഷം" },
+          { word: "till sunset", ipa: "/tɪl ˈsʌnset/", speakText: "till sunset", noteMl: "ടിൽ സൺസെറ്റ് — സൂര്യാസ്തമയം വരെ" },
+        ],
+      } as PronunciationGuide,
       examples: [
         { en: "I will have been studying for 3 hours.", ml: "ഞാൻ 3 മണിക്കൂർ പഠിച്ചുകൊണ്ടിരിക്കും." },
         { en: "She will have been working for a decade.", ml: "അവൾ പത്ത് വർഷമായി ജോലി ചെയ്തുകൊണ്ടിരിക്കും." },
@@ -873,8 +1659,58 @@ function LessonInterface({ lesson, onClose }: { lesson: LessonItem, onClose: () 
     return [];
   };
 
+  const getFillExercises = (): FillExercise[] | null => {
+    const title = lesson.title.toLowerCase();
+    if (title.includes("present tenses")) return PRESENT_FILL_EXERCISES;
+    if (title.includes("past tenses")) return PAST_FILL_EXERCISES;
+    if (title.includes("future tenses")) return FUTURE_FILL_EXERCISES;
+    return null;
+  };
+
   const currentContent = getStepContent();
-  const totalSteps = currentContent.length > 0 ? currentContent.length : 4;
+  const fillExercises = getFillExercises();
+  const isGrammarLesson = fillExercises !== null;
+
+  // For grammar lessons the flow is:
+  //   step 0..N-1 → show tense examples (currentContent)
+  //   after each tense step → show fill exercise for that tense
+  //   after all tenses → show summary
+  // We interleave: content[0] → fill[0] → content[1] → fill[1] → ... → summary
+  // We track this via `step` (content index) and `showingFill`
+
+  const totalContentSteps = currentContent.length;
+  const totalFillSteps = fillExercises ? fillExercises.length : 0;
+
+  // For non-grammar lessons keep original behaviour
+  const totalSteps = isGrammarLesson
+    ? totalContentSteps + totalFillSteps + 1  // +1 for final summary
+    : currentContent.length > 0 ? currentContent.length : 4;
+
+  // Progress: count completed content + fill steps
+  const progressNumerator = isGrammarLesson
+    ? step + fillScores.length + (showingFill ? 0 : 0)
+    : step;
+  const progressDenominator = isGrammarLesson
+    ? totalContentSteps + totalFillSteps
+    : totalSteps - 1;
+
+  const handleFillComplete = (correct: number, total: number) => {
+    const newScores = [...fillScores, { correct, total }];
+    setFillScores(newScores);
+    setShowingFill(false);
+    // Move to next content step (or summary if done)
+    setStep((s) => s + 1);
+  };
+
+  const handleNextContent = () => {
+    if (isGrammarLesson && fillExercises && step < totalContentSteps) {
+      // After each content step, show the matching fill exercise
+      setShowingFill(true);
+    } else if (!isGrammarLesson) {
+      if (step < totalSteps - 1) setStep((s) => s + 1);
+      else onClose();
+    }
+  };
 
   return (
     <div className="h-full flex flex-col bg-stone-50">
@@ -886,20 +1722,131 @@ function LessonInterface({ lesson, onClose }: { lesson: LessonItem, onClose: () 
            <div className="h-2 w-full bg-stone-100 rounded-full overflow-hidden">
              <motion.div 
                initial={{ width: 0 }}
-               animate={{ width: `${(step / (totalSteps - 1)) * 100}%` }}
+               animate={{ width: `${Math.min(100, (progressNumerator / Math.max(1, progressDenominator)) * 100)}%` }}
                className="h-full bg-stone-900 rounded-full"
              />
            </div>
         </div>
         <div className="text-xs font-mono font-bold text-stone-400 uppercase px-4 py-1 bg-stone-50 border border-stone-200 rounded-lg">
-           Step {step + 1} / {totalSteps}
+           {isGrammarLesson
+             ? showingFill
+               ? `Quiz ${fillScores.length + 1}/${totalFillSteps}`
+               : step < totalContentSteps
+                 ? `Tense ${step + 1}/${totalContentSteps}`
+                 : "Summary"
+             : `Step ${step + 1} / ${totalSteps}`}
         </div>
       </nav>
 
       <div className="flex-1 overflow-y-auto p-8 text-center max-w-3xl mx-auto space-y-12 scrollbar-hide">
         <div className="min-h-full flex flex-col items-center justify-center py-12">
           <AnimatePresence mode="wait">
-          {currentContent.length > 0 ? (
+
+          {/* ── Grammar lesson: fill exercise ── */}
+          {isGrammarLesson && showingFill && fillExercises && (
+            <motion.div
+              key={`fill-${fillScores.length}`}
+              initial={{ opacity: 0, x: 40 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -40 }}
+              className="w-full"
+            >
+              <FillExerciseStep
+                exercise={fillExercises[fillScores.length]}
+                onComplete={handleFillComplete}
+              />
+            </motion.div>
+          )}
+
+          {/* ── Grammar lesson: reward summary ── */}
+          {isGrammarLesson && !showingFill && step >= totalContentSteps && (
+            <RewardSummary
+              lesson={lesson}
+              fillScores={fillScores}
+              fillExercises={fillExercises!}
+              userData={userData}
+              onClose={onClose}
+            />
+          )}
+
+          {/* ── Grammar lesson: tense content ── */}
+          {isGrammarLesson && !showingFill && step < totalContentSteps && currentContent.length > 0 && (
+            <motion.div
+              key={`content-${step}`}
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: -20 }}
+              className="space-y-8 w-full"
+            >
+              <div className="space-y-4">
+                <div className={cn("inline-block p-1 px-3 rounded-full text-white text-[10px] font-bold uppercase tracking-widest mb-2", currentContent[step].color)}>
+                  {lesson.title.split(' ')[0]} Masterclass
+                </div>
+                <h2 className="text-5xl font-display font-medium leading-[1.1]">{currentContent[step].name}</h2>
+                <div className="flex flex-col items-center gap-1">
+                  <p className="text-xl text-stone-900 font-medium">{currentContent[step].nameMl}</p>
+                  <p className="text-lg text-stone-400 italic">
+                    {currentContent[step].use} / {currentContent[step].useMl}
+                  </p>
+                </div>
+              </div>
+
+              {/* Pronunciation guide — only for tense entries that have one */}
+              {currentContent[step].pronunciation && (
+                <PronunciationPanel guide={currentContent[step].pronunciation as PronunciationGuide} />
+              )}
+
+              <div className="w-full space-y-4">
+                {currentContent[step].examples.map((ex: any, i: number) => (
+                  <div key={i} className="p-8 md:p-10 rounded-[2.5rem] bg-white border border-stone-200 text-left space-y-4 shadow-xl shadow-stone-200/30">
+                    <div className="flex items-start gap-4">
+                      <button 
+                        onClick={() => {
+                          const textToSpeak = ex.en.includes('/') ? ex.en.split('/')[0].trim() : ex.en;
+                          speak(textToSpeak);
+                        }}
+                        className="w-10 h-10 rounded-xl bg-stone-900 flex items-center justify-center text-white shadow-lg shrink-0 mt-1 cursor-pointer hover:scale-110 active:scale-95 transition-all focus:outline-none focus:ring-2 focus:ring-stone-200"
+                        title="Speak in English"
+                      >
+                        <Volume2 className="w-5 h-5" />
+                      </button>
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1">Example {i + 1}</p>
+                          <p className="text-2xl md:text-3xl font-display italic tracking-tight text-stone-900 leading-tight">
+                            {ex.en}
+                          </p>
+                        </div>
+                        <p className="text-lg text-stone-500 font-medium">
+                          {ex.ml}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Teaser for upcoming quiz */}
+              <div className="flex items-center gap-3 p-4 rounded-2xl bg-stone-50 border border-stone-200 text-left">
+                <div className="w-8 h-8 rounded-xl bg-stone-900 flex items-center justify-center text-white shrink-0">
+                  <Pencil className="w-4 h-4" />
+                </div>
+                <p className="text-sm text-stone-500">
+                  <span className="font-bold text-stone-900">Up next:</span> A quick fill-in-the-blank quiz on {currentContent[step].name}.
+                </p>
+              </div>
+
+              <button 
+                onClick={handleNextContent}
+                className="px-12 py-5 bg-stone-900 text-white rounded-[2rem] font-bold text-lg hover:scale-105 active:scale-95 transition-all shadow-xl shadow-stone-200"
+              >
+                Practice This Tense →
+              </button>
+            </motion.div>
+          )}
+
+          {/* ── Non-grammar lessons (original behaviour) ── */}
+          {!isGrammarLesson && currentContent.length > 0 && (
             <motion.div
               key={step}
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -950,8 +1897,9 @@ function LessonInterface({ lesson, onClose }: { lesson: LessonItem, onClose: () 
                 ))}
               </div>
             </motion.div>
-          ) : (
-            // Original hardcoded steps for other lessons
+          )}
+
+          {!isGrammarLesson && currentContent.length === 0 && (
             <>
               {step === 0 && (
                 <motion.div
@@ -1038,12 +1986,15 @@ function LessonInterface({ lesson, onClose }: { lesson: LessonItem, onClose: () 
           )}
         </AnimatePresence>
 
-        <button 
-          onClick={() => step < totalSteps - 1 ? setStep(step + 1) : onClose()}
-          className="px-12 py-5 bg-stone-900 text-white rounded-[2rem] font-bold text-lg hover:scale-105 active:scale-95 transition-all shadow-xl shadow-stone-200"
-        >
-          {step === totalSteps - 1 ? "Finish Pathway" : "Next Concept"}
-        </button>
+        {/* Next button — only shown for non-grammar lessons or non-fill states */}
+        {!isGrammarLesson && (
+          <button 
+            onClick={() => step < totalSteps - 1 ? setStep(step + 1) : onClose()}
+            className="px-12 py-5 bg-stone-900 text-white rounded-[2rem] font-bold text-lg hover:scale-105 active:scale-95 transition-all shadow-xl shadow-stone-200"
+          >
+            {step === totalSteps - 1 ? "Finish Pathway" : "Next Concept"}
+          </button>
+        )}
         </div>
       </div>
     </div>

@@ -14,6 +14,8 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     name TEXT,
+    email TEXT,
+    avatar TEXT,
     xp INTEGER DEFAULT 0,
     level INTEGER DEFAULT 1,
     streak INTEGER DEFAULT 0,
@@ -39,17 +41,61 @@ db.exec(`
   );
 `);
 
+// Migrate: add email/avatar columns if they don't exist yet
+try {
+  db.exec(`ALTER TABLE users ADD COLUMN email TEXT`);
+} catch (_) { /* already exists */ }
+try {
+  db.exec(`ALTER TABLE users ADD COLUMN avatar TEXT`);
+} catch (_) { /* already exists */ }
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   app.use(express.json());
 
-  // API Routes
+  // ── Google Sign-In verification ──────────────────────────────────────────
+  // Accepts the credential JWT from Google Identity Services, decodes the
+  // payload (we trust Google's signature here — for production add proper
+  // JWT verification with google-auth-library), and upserts the user.
+  app.post("/api/auth/google", async (req, res) => {
+    try {
+      const { credential } = req.body as { credential: string };
+      if (!credential) return res.status(400).json({ error: "No credential" });
+
+      // Decode the JWT payload (base64url middle segment) — no signature
+      // verification needed for this demo; in production use google-auth-library.
+      const payloadB64 = credential.split(".")[1];
+      const payload = JSON.parse(
+        Buffer.from(payloadB64.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8")
+      ) as { sub: string; name: string; email: string; picture: string };
+
+      const userId = `google_${payload.sub}`;
+      const existing = db.prepare("SELECT * FROM users WHERE id = ?").get(userId) as any;
+
+      if (!existing) {
+        db.prepare(
+          "INSERT INTO users (id, name, email, avatar, xp, level, streak, last_login) VALUES (?, ?, ?, ?, 0, 1, 1, ?)"
+        ).run(userId, payload.name, payload.email, payload.picture, new Date().toISOString());
+      } else {
+        db.prepare("UPDATE users SET name=?, email=?, avatar=?, last_login=? WHERE id=?").run(
+          payload.name, payload.email, payload.picture, new Date().toISOString(), userId
+        );
+      }
+
+      const user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
+      res.json({ user, token: credential });
+    } catch (err) {
+      console.error("Google auth error:", err);
+      res.status(500).json({ error: "Auth failed" });
+    }
+  });
+
+  // ── Existing API Routes ──────────────────────────────────────────────────
   app.get("/api/user/:id", (req, res) => {
     const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.params.id);
     if (!user) {
-      // Create default user if not exists for demo
       const newUser = { id: req.params.id, name: "Learner", xp: 0, level: 1, streak: 1, last_login: new Date().toISOString() };
       db.prepare("INSERT INTO users (id, name, xp, level, streak, last_login) VALUES (?, ?, ?, ?, ?, ?)").run(
         newUser.id, newUser.name, newUser.xp, newUser.level, newUser.streak, newUser.last_login
@@ -68,7 +114,6 @@ async function startServer() {
       
     db.prepare("UPDATE users SET xp = xp + ? WHERE id = ?").run(xpGained, userId);
     
-    // Potentially handle level ups here
     res.json({ success: true });
   });
 
@@ -87,7 +132,6 @@ async function startServer() {
       entry = { user_id: userId, word, strength: 0.1, interval: 1, ease_factor: 2.5 };
     }
 
-    // Simple SM-2 like logic
     if (success) {
       entry.interval = Math.ceil(entry.interval * entry.ease_factor);
       entry.strength = Math.min(1.0, entry.strength + 0.1);
