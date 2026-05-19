@@ -151,17 +151,16 @@ export default function App() {
 
   async function loadProfile(authUser: any) {
     try {
-      const profile = await api.upsertProfile({
+      // Use getOrCreateProfile — never overwrites username or XP
+      const profile = await api.getOrCreateProfile({
         id:     authUser.id,
-        name:   authUser.user_metadata?.full_name  ?? authUser.email ?? "Learner",
+        name:   authUser.user_metadata?.full_name ?? authUser.email ?? "Learner",
         email:  authUser.email ?? "",
         avatar: authUser.user_metadata?.avatar_url ?? "",
       });
       setUserData(profile);
     } catch (err) {
       console.warn("Could not load profile from Supabase, using auth metadata:", err);
-      // Fallback: use auth metadata directly so the app still works
-      // even if the profiles table hasn't been created yet
       setUserData({
         id:     authUser.id,
         name:   authUser.user_metadata?.full_name ?? authUser.email ?? "Learner",

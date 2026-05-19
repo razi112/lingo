@@ -18,6 +18,7 @@ export default function AIChat({ userData }: { userData: any }) {
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   
+  const [chatError, setChatError] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<number | null>(null);
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
@@ -73,9 +74,9 @@ export default function AIChat({ userData }: { userData: any }) {
     return (
       <div className="p-8 md:p-16 max-w-5xl mx-auto space-y-16">
         <header className="space-y-6">
-           <h1 className="text-5xl md:text-7xl font-display font-medium tracking-tighter italic">Speaking Lab.</h1>
+           <h1 className="text-5xl md:text-7xl font-display font-medium tracking-tighter italic">Speaking Lab</h1>
            <p className="text-stone-500 text-xl max-w-xl font-light">
-             Choose a scenario to practice real-world interactions with Nabu, our AI language partner.
+             Choose a scenario to practice real-world interactions with Elix, our AI language partner.
            </p>
         </header>
 
@@ -115,6 +116,7 @@ export default function AIChat({ userData }: { userData: any }) {
     setMessages(prev => [...prev, userMessage]);
     setInput("");
     setIsTyping(true);
+    setChatError(null);
 
     try {
       const history = [...messages, userMessage].map(m => ({
@@ -130,8 +132,18 @@ export default function AIChat({ userData }: { userData: any }) {
       };
       
       setMessages(prev => [...prev, nabuMessage]);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Chat error:", err);
+      const msg: string = err?.message ?? "";
+      if (msg.includes("VITE_GROQ_API_KEY") || msg.includes("not defined")) {
+        setChatError("Groq API key is missing. Add VITE_GROQ_API_KEY to your .env file and restart the dev server.");
+      } else if (msg.includes("Invalid API Key") || msg.includes("401")) {
+        setChatError("Invalid Groq API key. Check VITE_GROQ_API_KEY in your .env file.");
+      } else if (msg.includes("rate_limit") || msg.includes("429")) {
+        setChatError("Groq rate limit reached. Wait a moment and try again.");
+      } else {
+        setChatError(msg || "Nabu couldn't respond. Please try again.");
+      }
     } finally {
       setIsTyping(false);
     }
@@ -268,6 +280,26 @@ export default function AIChat({ userData }: { userData: any }) {
         </AnimatePresence>
       </div>
 
+      {/* Error banner */}
+      <AnimatePresence>
+        {chatError && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            className="mx-6 mb-2 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-sm flex items-start gap-3"
+          >
+            <span className="shrink-0 text-lg">⚠️</span>
+            <span>{chatError}</span>
+            <button
+              onClick={() => setChatError(null)}
+              className="ml-auto shrink-0 text-red-400 hover:text-red-700 font-bold text-lg leading-none"
+              aria-label="Dismiss error"
+            >×</button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Input Area */}
       <footer className="p-6 bg-white border-t border-stone-200">
         <div className="max-w-4xl mx-auto flex items-center gap-4">
@@ -301,7 +333,7 @@ export default function AIChat({ userData }: { userData: any }) {
             </button>
           </div>
         </div>
-        <p className="text-center text-[10px] text-stone-400 uppercase tracking-widest mt-4 font-bold">Powered by Gemini & Nabu Intelligence</p>
+        <p className="text-center text-[10px] text-stone-400 uppercase tracking-widest mt-4 font-bold">Powered by Groq · Nabu Intelligence</p>
       </footer>
     </div>
   );

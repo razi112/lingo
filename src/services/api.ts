@@ -1,16 +1,16 @@
-import { GoogleGenAI } from "@google/genai";
+import Groq from "groq-sdk";
 import { supabase, type SupabaseUser } from "../lib/supabase";
 
-// ── Gemini AI ──────────────────────────────────────────────────────────────
-let aiClient: GoogleGenAI | null = null;
+// ── Groq AI ────────────────────────────────────────────────────────────────
+let groqClient: Groq | null = null;
 
-function getAI() {
-  if (!aiClient) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error("GEMINI_API_KEY is not defined.");
-    aiClient = new GoogleGenAI({ apiKey });
+function getGroq(): Groq {
+  if (!groqClient) {
+    const apiKey = import.meta.env.VITE_GROQ_API_KEY as string | undefined;
+    if (!apiKey) throw new Error("VITE_GROQ_API_KEY is not defined. Add it to your .env file.");
+    groqClient = new Groq({ apiKey, dangerouslyAllowBrowser: true });
   }
-  return aiClient;
+  return groqClient;
 }
 
 // ── User / profile ─────────────────────────────────────────────────────────
@@ -37,7 +37,7 @@ export const api = {
     return (data as any)?.email ?? null;
   },
 
-  /** Upsert profile data (name, email, avatar) after OAuth sign-in. */
+  /** Upsert profile data (name, email, avatar) after OAuth sign-in or sign-up. */
   async upsertProfile(profile: Partial<SupabaseUser> & { id: string }): Promise<SupabaseUser> {
     const { data, error } = await supabase
       .from("profiles")
@@ -45,6 +45,54 @@ export const api = {
       .select()
       .single();
 
+    if (error) throw error;
+    return data as SupabaseUser;
+  },
+
+  /**
+   * Fetch an existing profile, or create a minimal one if it doesn't exist yet.
+   * Unlike upsertProfile, this NEVER overwrites the username — safe to call on every sign-in.
+   */
+  async getOrCreateProfile(base: { id: string; name: string; email: string; avatar: string }): Promise<SupabaseUser> {
+    // Try to fetch existing profile first
+    const { data: existing } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", base.id)
+      .maybeSingle();
+
+    if (existing) {
+      // Just update last_login, name, email, avatar — preserve username and XP
+      const { data, error } = await supabase
+        .from("profiles")
+        .update({
+          name:       base.name,
+          email:      base.email,
+          avatar:     base.avatar,
+          last_login: new Date().toISOString(),
+        })
+        .eq("id", base.id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as SupabaseUser;
+    }
+
+    // No profile yet — create one (username will be set later or left null)
+    const { data, error } = await supabase
+      .from("profiles")
+      .insert({
+        id:         base.id,
+        name:       base.name,
+        email:      base.email,
+        avatar:     base.avatar,
+        xp:         0,
+        level:      1,
+        streak:     1,
+        last_login: new Date().toISOString(),
+      })
+      .select()
+      .single();
     if (error) throw error;
     return data as SupabaseUser;
   },
@@ -136,23 +184,34 @@ export const api = {
 };
 
 // ── Nabu AI chat ───────────────────────────────────────────────────────────
+const SYSTEM_PROMPT =
+  "You are Nabu, a friendly robot owl language tutor. Your goal is to help users learn English. " +
+  "Be encouraging, patient, and use simple language. Correct their mistakes gently. " +
+  "You can also explain things in their native language (like Malayalam, Arabic, or Urdu) if they ask, " +
+  "but try to keep them immersion-focused in English as much as possible. " +
+  "Make learning fun with emojis and positive reinforcement.";
+
 export const chatWithNabu = async (
   history: { role: "user" | "model"; parts: { text: string }[] }[]
-) => {
-  const ai = getAI();
+): Promise<string> => {
+  const groq = getGroq();
 
-  const systemInstruction =
-    "You are Nabu, a friendly robot owl language tutor. Your goal is to help users learn English. " +
-    "Be encouraging, patient, and use simple language. Correct their mistakes gently. " +
-    "You can also explain things in their native language (like Malayalam, Arabic, or Urdu) if they ask, " +
-    "but try to keep them immersion-focused in English as much as possible. " +
-    "Make learning fun with emojis and positive reinforcement.";
+  // Convert from Gemini format ({ role: "model", parts: [{text}] })
+  // to OpenAI-compatible format ({ role: "assistant", content: string })
+  const messages: Groq.Chat.ChatCompletionMessageParam[] = [
+    { role: "system", content: SYSTEM_PROMPT },
+    ...history.map((m) => ({
+      role: (m.role === "model" ? "assistant" : "user") as "assistant" | "user",
+      content: m.parts.map((p) => p.text).join(""),
+    })),
+  ];
 
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: history,
-    config: { systemInstruction, temperature: 0.7, topP: 0.95 },
+  const completion = await groq.chat.completions.create({
+    model:       "llama-3.3-70b-versatile",
+    messages,
+    temperature: 0.7,
+    max_tokens:  1024,
   });
 
-  return response.text;
+  return completion.choices[0]?.message?.content ?? "";
 };

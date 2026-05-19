@@ -95,6 +95,21 @@ function StrengthBar({ password }: { password: string }) {
   );
 }
 
+// ── Helpers ────────────────────────────────────────────────────────────────
+/** Returns true if the string looks like an email address. */
+const isEmail = (v: string) => /\S+@\S+\.\S+/.test(v);
+
+/**
+ * Resolve a login identifier (username OR email) to a Supabase email.
+ * - If it looks like an email, use it directly.
+ * - Otherwise query the profiles table for a matching username.
+ */
+async function resolveEmail(identifier: string): Promise<string | null> {
+  const trimmed = identifier.trim();
+  if (isEmail(trimmed)) return trimmed.toLowerCase();
+  return api.getEmailByUsername(trimmed);
+}
+
 // ── Main component ─────────────────────────────────────────────────────────
 export default function Login({ onAuth }: LoginProps) {
   const [tab, setTab]         = useState<Tab>("signin");
@@ -103,10 +118,11 @@ export default function Login({ onAuth }: LoginProps) {
   const [success, setSuccess] = useState<string | null>(null);
 
   // ── Sign-in state ──────────────────────────────────────────────────
-  const [siUsername, setSiUsername] = useState("");
-  const [siPass,     setSiPass]     = useState("");
-  const [siShowP,    setSiShowP]    = useState(false);
-  const [siErrors,   setSiErrors]   = useState<Record<string, string>>({});
+  // siIdentifier accepts username OR email
+  const [siIdentifier, setSiIdentifier] = useState("");
+  const [siPass,       setSiPass]       = useState("");
+  const [siShowP,      setSiShowP]      = useState(false);
+  const [siErrors,     setSiErrors]     = useState<Record<string, string>>({});
 
   // ── Sign-up state ──────────────────────────────────────────────────
   const [suName,     setSuName]     = useState("");
@@ -118,63 +134,56 @@ export default function Login({ onAuth }: LoginProps) {
   const [suShowC,    setSuShowC]    = useState(false);
   const [suErrors,   setSuErrors]   = useState<Record<string, string>>({});
 
-  const reset = () => {
-    setError(null); setSuccess(null);
-    setSiErrors({}); setSuErrors({});
-  };
+  const reset = () => { setError(null); setSuccess(null); setSiErrors({}); setSuErrors({}); };
   const switchTab = (t: Tab) => { reset(); setTab(t); };
 
   // ── Validation ─────────────────────────────────────────────────────
   const validateSignIn = () => {
     const e: Record<string, string> = {};
-    if (!siUsername.trim())  e.username = "Username is required";
-    if (!siPass)             e.pass     = "Password is required";
+    if (!siIdentifier.trim()) e.identifier = "Username or email is required";
+    if (!siPass)              e.pass       = "Password is required";
     setSiErrors(e);
     return Object.keys(e).length === 0;
   };
 
   const validateSignUp = () => {
     const e: Record<string, string> = {};
-    if (!suName.trim())                          e.name     = "Full name is required";
-    if (!suUsername.trim())                      e.username = "Username is required";
-    else if (!/^[a-z0-9_]{3,20}$/.test(suUsername.toLowerCase()))
-                                                 e.username = "3–20 chars: letters, numbers, _";
-    if (!suEmail.trim())                         e.email    = "Email is required";
-    else if (!/\S+@\S+\.\S+/.test(suEmail))      e.email    = "Enter a valid email";
-    if (suPass.length < 6)                       e.pass     = "At least 6 characters";
-    if (suConf !== suPass)                       e.conf     = "Passwords don't match";
+    if (!suName.trim())                                              e.name     = "Full name is required";
+    if (!suUsername.trim())                                          e.username = "Username is required";
+    else if (!/^[a-z0-9_]{3,20}$/.test(suUsername.toLowerCase()))   e.username = "3–20 chars: letters, numbers, _";
+    if (!suEmail.trim())                                             e.email    = "Email is required";
+    else if (!isEmail(suEmail))                                      e.email    = "Enter a valid email";
+    if (suPass.length < 6)                                           e.pass     = "At least 6 characters";
+    if (suConf !== suPass)                                           e.conf     = "Passwords don't match";
     setSuErrors(e);
     return Object.keys(e).length === 0;
   };
 
-  // ── Sign in with username ──────────────────────────────────────────
+  // ── Sign in (username OR email) ────────────────────────────────────
   const handleSignIn = async (e: { preventDefault(): void }) => {
     e.preventDefault();
     if (!validateSignIn()) return;
     setLoading(true); setError(null);
     try {
-      // Look up the email registered for this username
-      const email = await api.getEmailByUsername(siUsername.trim());
+      const email = await resolveEmail(siIdentifier);
       if (!email) {
-        setSiErrors({ username: "No account found with this username" });
+        setSiErrors({ identifier: "No account found with that username or email" });
         setLoading(false);
         return;
       }
 
-      const { data, error: authErr } = await supabase.auth.signInWithPassword({
-        email, password: siPass,
-      });
+      const { data, error: authErr } = await supabase.auth.signInWithPassword({ email, password: siPass });
       if (authErr) throw authErr;
 
-      const profile = await api.upsertProfile({
+      // Fetch existing profile — don't overwrite username on sign-in
+      const profile = await api.getOrCreateProfile({
         id:     data.user!.id,
-        name:   data.user!.user_metadata?.full_name ?? siUsername,
+        name:   data.user!.user_metadata?.full_name ?? data.user!.email ?? "Learner",
         email:  data.user!.email ?? "",
         avatar: data.user!.user_metadata?.avatar_url ?? "",
       });
       onAuth(profile as AuthUser);
     } catch (err: any) {
-      // Supabase returns "Invalid login credentials" for wrong password
       const msg: string = err?.message ?? "";
       setError(
         msg.toLowerCase().includes("invalid")
@@ -195,7 +204,7 @@ export default function Login({ onAuth }: LoginProps) {
     const cleanUsername = suUsername.trim().toLowerCase();
 
     try {
-      // Check username availability before creating the auth user
+      // Check username availability
       const existing = await api.getEmailByUsername(cleanUsername);
       if (existing) {
         setSuErrors({ username: "Username already taken" });
@@ -206,12 +215,12 @@ export default function Login({ onAuth }: LoginProps) {
       const { data, error: authErr } = await supabase.auth.signUp({
         email:    suEmail.trim(),
         password: suPass,
-        options:  { data: { full_name: suName.trim() } },
+        options:  { data: { full_name: suName.trim(), username: cleanUsername } },
       });
       if (authErr) throw authErr;
 
       if (data.session) {
-        // Auto-confirmed — upsert profile with username and log in
+        // Auto-confirmed — create profile and log in immediately
         const profile = await api.upsertProfile({
           id:       data.user!.id,
           name:     suName.trim(),
@@ -221,26 +230,18 @@ export default function Login({ onAuth }: LoginProps) {
         });
         onAuth(profile as AuthUser);
       } else {
-        // Email confirmation required
-        // Still save the username so it's reserved
-        if (data.user) {
-          await api.upsertProfile({
-            id:       data.user.id,
-            name:     suName.trim(),
-            username: cleanUsername,
-            email:    suEmail.trim(),
-            avatar:   "",
-          }).catch(() => {});
-        }
+        // Email confirmation required — profile will be created by the DB trigger
+        // Store username in localStorage so we can set it after confirmation
+        localStorage.setItem(`lingo_pending_username_${suEmail.trim()}`, cleanUsername);
         setSuccess("Account created! Check your inbox to confirm your email, then sign in.");
         switchTab("signin");
-        setSiUsername(cleanUsername);
+        setSiIdentifier(suEmail.trim());
       }
     } catch (err: any) {
       const msg: string = err?.message ?? "";
       setError(
         msg.toLowerCase().includes("already registered")
-          ? "An account with this email already exists."
+          ? "An account with this email already exists. Try signing in."
           : msg || "Sign-up failed. Please try again."
       );
     } finally {
@@ -260,6 +261,7 @@ export default function Login({ onAuth }: LoginProps) {
         },
       });
       if (error) throw error;
+      // Page will redirect — loading stays true
     } catch (err: any) {
       setError(err?.message ?? "Google sign-in failed.");
       setLoading(false);
@@ -267,20 +269,10 @@ export default function Login({ onAuth }: LoginProps) {
   };
 
   // ── Guest ──────────────────────────────────────────────────────────
-  // Fully local — no Supabase anonymous auth needed (avoids the
-  // "Anonymous sign-ins are disabled" error).
   const handleGuest = () => {
     const guestId = `guest_${Math.random().toString(36).slice(2, 10)}`;
-    onAuth({
-      id:       guestId,
-      name:     "Guest Learner",
-      username: guestId,
-      email:    "",
-      avatar:   "",
-      xp:       0,
-      level:    1,
-      streak:   0,
-    });
+    onAuth({ id: guestId, name: "Guest Learner", username: guestId,
+             email: "", avatar: "", xp: 0, level: 1, streak: 0 });
   };
 
   // ── Render ─────────────────────────────────────────────────────────
@@ -298,14 +290,12 @@ export default function Login({ onAuth }: LoginProps) {
           <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-stone-800 blur-[80px]" />
           <div className="absolute -bottom-32 -right-32 w-96 h-96 rounded-full bg-stone-800 blur-[80px]" />
         </div>
-
         <div className="relative z-10 space-y-3">
           <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center">
             <GraduationCap className="w-7 h-7 text-stone-900" />
           </div>
           <span className="font-display font-bold text-2xl tracking-tight italic uppercase">LINGO.</span>
         </div>
-
         <div className="relative z-10 space-y-10">
           <div className="space-y-4">
             <h1 className="text-5xl font-display font-medium leading-[1.05]">
@@ -330,7 +320,6 @@ export default function Login({ onAuth }: LoginProps) {
             ))}
           </div>
         </div>
-
         <p className="relative z-10 text-stone-600 text-xs">© 2026 Lingo · Built for learners</p>
       </motion.div>
 
@@ -413,18 +402,18 @@ export default function Login({ onAuth }: LoginProps) {
               >
                 <div className="mb-6">
                   <h2 className="text-3xl font-display font-medium tracking-tight">Welcome back.</h2>
-                  <p className="text-stone-500 text-sm mt-1">Sign in with your username and password.</p>
+                  <p className="text-stone-500 text-sm mt-1">Sign in with your username or email.</p>
                 </div>
 
                 <form onSubmit={handleSignIn} className="space-y-4" noValidate>
                   <Field
-                    label="Username"
-                    value={siUsername}
-                    onChange={setSiUsername}
-                    placeholder="your_username"
+                    label="Username or Email"
+                    value={siIdentifier}
+                    onChange={setSiIdentifier}
+                    placeholder="username or you@example.com"
                     icon={AtSign}
                     autoComplete="username"
-                    error={siErrors.username}
+                    error={siErrors.identifier}
                   />
                   <Field
                     label="Password"
@@ -436,23 +425,15 @@ export default function Login({ onAuth }: LoginProps) {
                     autoComplete="current-password"
                     error={siErrors.pass}
                     rightSlot={
-                      <button
-                        type="button"
-                        onClick={() => setSiShowP((v) => !v)}
+                      <button type="button" onClick={() => setSiShowP((v) => !v)}
                         className="text-stone-400 hover:text-stone-700 transition-colors"
-                        tabIndex={-1}
-                        aria-label={siShowP ? "Hide password" : "Show password"}
-                      >
+                        tabIndex={-1} aria-label={siShowP ? "Hide password" : "Show password"}>
                         {siShowP ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     }
                   />
-
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full py-4 bg-stone-900 text-white rounded-2xl font-bold text-sm hover:bg-stone-800 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
+                  <button type="submit" disabled={loading}
+                    className="w-full py-4 bg-stone-900 text-white rounded-2xl font-bold text-sm hover:bg-stone-800 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                     {loading ? "Signing in…" : "Sign In"}
                   </button>
                 </form>
@@ -464,19 +445,12 @@ export default function Login({ onAuth }: LoginProps) {
                 </div>
 
                 <div className="space-y-3">
-                  <button
-                    onClick={handleGoogleAuth}
-                    disabled={loading}
-                    className="w-full flex items-center justify-center gap-3 py-3.5 px-6 rounded-2xl border-2 border-stone-200 bg-white text-stone-800 font-semibold text-sm hover:border-stone-900 hover:shadow-md transition-all disabled:opacity-50"
-                  >
-                    <GoogleLogo />
-                    Continue with Google
+                  <button onClick={handleGoogleAuth} disabled={loading}
+                    className="w-full flex items-center justify-center gap-3 py-3.5 px-6 rounded-2xl border-2 border-stone-200 bg-white text-stone-800 font-semibold text-sm hover:border-stone-900 hover:shadow-md transition-all disabled:opacity-50">
+                    <GoogleLogo /> Continue with Google
                   </button>
-                  <button
-                    onClick={handleGuest}
-                    disabled={loading}
-                    className="w-full py-3.5 rounded-2xl border-2 border-dashed border-stone-200 text-stone-500 font-semibold text-sm hover:border-stone-400 hover:text-stone-700 transition-all disabled:opacity-50"
-                  >
+                  <button onClick={handleGuest} disabled={loading}
+                    className="w-full py-3.5 rounded-2xl border-2 border-dashed border-stone-200 text-stone-500 font-semibold text-sm hover:border-stone-400 hover:text-stone-700 transition-all disabled:opacity-50">
                     Continue as Guest
                   </button>
                 </div>
@@ -505,89 +479,38 @@ export default function Login({ onAuth }: LoginProps) {
                 </div>
 
                 <form onSubmit={handleSignUp} className="space-y-4" noValidate>
-                  <Field
-                    label="Full Name"
-                    value={suName}
-                    onChange={setSuName}
-                    placeholder="Your full name"
-                    icon={User}
-                    autoComplete="name"
-                    error={suErrors.name}
-                  />
-                  <Field
-                    label="Username"
+                  <Field label="Full Name" value={suName} onChange={setSuName}
+                    placeholder="Your full name" icon={User} autoComplete="name" error={suErrors.name} />
+                  <Field label="Username"
                     value={suUsername}
                     onChange={(v) => setSuUsername(v.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
-                    placeholder="e.g. razi_learns"
-                    icon={AtSign}
-                    autoComplete="username"
-                    error={suErrors.username}
-                  />
-                  {/* Username hint */}
+                    placeholder="e.g. razi_learns" icon={AtSign} autoComplete="username" error={suErrors.username} />
                   {!suErrors.username && suUsername && (
-                    <p className="text-xs text-stone-400 -mt-1 pl-1">
-                      3–20 characters · letters, numbers and _ only
-                    </p>
+                    <p className="text-xs text-stone-400 -mt-1 pl-1">3–20 characters · letters, numbers and _ only</p>
                   )}
-                  <Field
-                    label="Email"
-                    type="email"
-                    value={suEmail}
-                    onChange={setSuEmail}
-                    placeholder="you@example.com"
-                    icon={Mail}
-                    autoComplete="email"
-                    error={suErrors.email}
-                  />
-                  <Field
-                    label="Password"
-                    type={suShowP ? "text" : "password"}
-                    value={suPass}
-                    onChange={setSuPass}
-                    placeholder="Min. 6 characters"
-                    icon={Lock}
-                    autoComplete="new-password"
-                    error={suErrors.pass}
+                  <Field label="Email" type="email" value={suEmail} onChange={setSuEmail}
+                    placeholder="you@example.com" icon={Mail} autoComplete="email" error={suErrors.email} />
+                  <Field label="Password" type={suShowP ? "text" : "password"} value={suPass} onChange={setSuPass}
+                    placeholder="Min. 6 characters" icon={Lock} autoComplete="new-password" error={suErrors.pass}
                     rightSlot={
-                      <button
-                        type="button"
-                        onClick={() => setSuShowP((v) => !v)}
+                      <button type="button" onClick={() => setSuShowP((v) => !v)}
                         className="text-stone-400 hover:text-stone-700 transition-colors"
-                        tabIndex={-1}
-                        aria-label={suShowP ? "Hide password" : "Show password"}
-                      >
+                        tabIndex={-1} aria-label={suShowP ? "Hide password" : "Show password"}>
                         {suShowP ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
-                    }
-                  />
+                    } />
                   <StrengthBar password={suPass} />
-                  <Field
-                    label="Confirm Password"
-                    type={suShowC ? "text" : "password"}
-                    value={suConf}
-                    onChange={setSuConf}
-                    placeholder="Repeat password"
-                    icon={Lock}
-                    autoComplete="new-password"
-                    error={suErrors.conf}
+                  <Field label="Confirm Password" type={suShowC ? "text" : "password"} value={suConf} onChange={setSuConf}
+                    placeholder="Repeat password" icon={Lock} autoComplete="new-password" error={suErrors.conf}
                     rightSlot={
-                      <button
-                        type="button"
-                        onClick={() => setSuShowC((v) => !v)}
+                      <button type="button" onClick={() => setSuShowC((v) => !v)}
                         className="text-stone-400 hover:text-stone-700 transition-colors"
-                        tabIndex={-1}
-                        aria-label={suShowC ? "Hide password" : "Show password"}
-                      >
+                        tabIndex={-1} aria-label={suShowC ? "Hide password" : "Show password"}>
                         {suShowC ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
-                    }
-                  />
-
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full py-4 bg-stone-900 text-white rounded-2xl font-bold text-sm hover:bg-stone-800 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
+                    } />
+                  <button type="submit" disabled={loading}
+                    className="w-full py-4 bg-stone-900 text-white rounded-2xl font-bold text-sm hover:bg-stone-800 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                     {loading ? "Creating account…" : "Create Account"}
                   </button>
                 </form>
@@ -598,13 +521,9 @@ export default function Login({ onAuth }: LoginProps) {
                   <div className="flex-1 h-px bg-stone-200" />
                 </div>
 
-                <button
-                  onClick={handleGoogleAuth}
-                  disabled={loading}
-                  className="w-full flex items-center justify-center gap-3 py-3.5 px-6 rounded-2xl border-2 border-stone-200 bg-white text-stone-800 font-semibold text-sm hover:border-stone-900 hover:shadow-md transition-all disabled:opacity-50"
-                >
-                  <GoogleLogo />
-                  Sign up with Google
+                <button onClick={handleGoogleAuth} disabled={loading}
+                  className="w-full flex items-center justify-center gap-3 py-3.5 px-6 rounded-2xl border-2 border-stone-200 bg-white text-stone-800 font-semibold text-sm hover:border-stone-900 hover:shadow-md transition-all disabled:opacity-50">
+                  <GoogleLogo /> Sign up with Google
                 </button>
 
                 <p className="text-center text-sm text-stone-400 mt-6">
